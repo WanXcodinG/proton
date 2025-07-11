@@ -324,8 +324,8 @@ try:
             
             current_url = driver.current_url
             
-            # Solve puzzle captcha dengan AntiCaptcha (coba custom method dulu)
-            captcha_solution = solve_custom_puzzle_captcha(puzzle_screenshot, current_url)
+            # Solve puzzle captcha dengan AntiCaptcha
+            captcha_solution = solve_puzzle_captcha_with_anticaptcha(puzzle_screenshot, current_url)
             
             if captcha_solution:
                 print(f"[INFO] Menerapkan solusi puzzle captcha: {captcha_solution}")
