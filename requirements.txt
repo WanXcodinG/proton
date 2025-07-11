@@ -1,0 +1,4 @@
+faker
+undetected-chromedriver
+selenium
+requests
