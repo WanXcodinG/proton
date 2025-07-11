@@ -2,3 +2,4 @@ faker
 undetected-chromedriver
 selenium
 requests
+pillow

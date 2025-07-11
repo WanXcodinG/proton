@@ -14,298 +14,95 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException
 from PIL import Image
 import io
-import cv2
-import numpy as np
 
-# --- KONFIGURASI ANTICAPTCHA (BACKUP) ---
-ANTICAPTCHA_API_KEY = "YOUR_ANTICAPTCHA_API_KEY_HERE"  # Backup jika native solver gagal
+# --- KONFIGURASI 2CAPTCHA ---
+TWOCAPTCHA_API_KEY = "YOUR_2CAPTCHA_API_KEY_HERE"  # Ganti dengan API key 2captcha Anda
 CAPTCHA_SOLVE_TIMEOUT = 300  # 5 menit timeout untuk solve captcha
 
-class ProtonCaptchaSolver:
-    def __init__(self, session_cookies=None):
-        self.session = requests.Session()
-        self.session_cookies = session_cookies
-        self.token = None
-        self.contest_id = None
-        self.bg_image = None
-        self.puzzle_piece = None
-        
-        # Headers default
-        self.headers = {
-            'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-            'Accept-Encoding': "gzip, deflate, br, zstd",
-            'cache-control': "max-age=0",
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
-            'content-type': "application/json",
-            'sec-ch-ua-mobile': "?0",
-            'sec-fetch-site': "same-origin",
-            'sec-fetch-mode': "cors",
-            'sec-fetch-dest': "empty",
-            'accept-language': "en-US,en;q=0.9",
-            'priority': "u=1, i"
-        }
-        
-        if session_cookies:
-            self.headers['Cookie'] = session_cookies
-
-    def init_captcha(self, token):
-        """Initialize captcha dan dapatkan contest_id"""
-        self.token = token
-        url = f"https://account-api.proton.me/captcha/v1/api/init?challengeType=2D&parentURL=https%3A%2F%2Faccount-api.proton.me%2Fcore%2Fv4%2Fcaptcha%3FToken%3D{token}%26ForceWebMessaging%3D1&displayedLang=en&supportedLangs=en-US%2Cen-US%2Cen%2Cen-US%2Cen&purpose=signup&token={token}"
-        
-        try:
-            response = self.session.get(url, headers=self.headers, timeout=30)
-            print(f"[PROTON INIT] Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                print(f"[PROTON INIT] Response: {data}")
-                
-                # Extract contest_id dan token baru
-                if 'contestId' in data:
-                    self.contest_id = data['contestId']
-                if 'token' in data:
-                    self.token = data['token']
-                    
-                print(f"[PROTON INIT] Contest ID: {self.contest_id}")
-                print(f"[PROTON INIT] Token: {self.token}")
-                return True
-            return False
-            
-        except Exception as e:
-            print(f"[PROTON INIT ERROR] {e}")
-            return False
-
-    def get_background_image(self):
-        """Download background image"""
-        if not self.token:
-            return False
-            
-        url = f"https://account-api.proton.me/captcha/v1/api/bg?token={self.token}"
-        
-        try:
-            response = self.session.get(url, headers=self.headers, timeout=30)
-            print(f"[PROTON BG] Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                self.bg_image = response.content
-                print(f"[PROTON BG] Background image downloaded: {len(self.bg_image)} bytes")
-                return True
-            return False
-            
-        except Exception as e:
-            print(f"[PROTON BG ERROR] {e}")
-            return False
-
-    def get_puzzle_piece(self):
-        """Download puzzle piece"""
-        if not self.token:
-            return False
-            
-        url = f"https://account-api.proton.me/captcha/v1/api/puzzle?token={self.token}"
-        
-        try:
-            response = self.session.get(url, headers=self.headers, timeout=30)
-            print(f"[PROTON PUZZLE] Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                self.puzzle_piece = response.content
-                print(f"[PROTON PUZZLE] Puzzle piece downloaded: {len(self.puzzle_piece)} bytes")
-                return True
-            return False
-            
-        except Exception as e:
-            print(f"[PROTON PUZZLE ERROR] {e}")
-            return False
-
-    def solve_puzzle_opencv(self):
-        """Solve puzzle menggunakan OpenCV template matching"""
-        if not self.bg_image or not self.puzzle_piece:
-            print("[OPENCV] Background atau puzzle piece tidak tersedia")
-            return None
-            
-        try:
-            # Convert images
-            bg_array = np.frombuffer(self.bg_image, np.uint8)
-            puzzle_array = np.frombuffer(self.puzzle_piece, np.uint8)
-            
-            bg_img = cv2.imdecode(bg_array, cv2.IMREAD_COLOR)
-            puzzle_img = cv2.imdecode(puzzle_array, cv2.IMREAD_COLOR)
-            
-            if bg_img is None or puzzle_img is None:
-                print("[OPENCV] Gagal decode images")
-                return None
-            
-            print(f"[OPENCV] Background size: {bg_img.shape}")
-            print(f"[OPENCV] Puzzle size: {puzzle_img.shape}")
-            
-            # Template matching
-            result = cv2.matchTemplate(bg_img, puzzle_img, cv2.TM_CCOEFF_NORMED)
-            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-            
-            print(f"[OPENCV] Match confidence: {max_val}")
-            print(f"[OPENCV] Best match location: {max_loc}")
-            
-            if max_val > 0.3:  # Threshold confidence
-                x, y = max_loc
-                print(f"[OPENCV SUCCESS] Puzzle solution: x={x}, y={y}")
-                return f"{x},{y}"
-            else:
-                print(f"[OPENCV] Confidence terlalu rendah: {max_val}")
-                return None
-                
-        except Exception as e:
-            print(f"[OPENCV ERROR] {e}")
-            return None
-
-    def validate_solution(self, x, y):
-        """Validate solution ke Proton API"""
-        if not self.token or not self.contest_id:
-            return False
-            
-        url = f"https://account-api.proton.me/captcha/v1/api/validate?token={self.token}&contestId={self.contest_id}&purpose=signup&x={int(x)}&y={int(y)}"
-        
-        try:
-            response = self.session.get(url, headers=self.headers, timeout=30)
-            print(f"[PROTON VALIDATE] Status: {response.status_code}")
-            print(f"[PROTON VALIDATE] Response: {response.text}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('success') or data.get('valid') or data.get('status') == 'success':
-                    print("[PROTON VALIDATE SUCCESS] Solution valid!")
-                    return True
-            return False
-            
-        except Exception as e:
-            print(f"[PROTON VALIDATE ERROR] {e}")
-            return False
-
-    def finalize_captcha(self):
-        """Finalize captcha setelah validation"""
-        if not self.contest_id:
-            return False
-            
-        url = f"https://account-api.proton.me/captcha/v1/api/finalize?contestId={self.contest_id}&purpose=signup"
-        
-        try:
-            response = self.session.post(url, headers=self.headers, timeout=30)
-            print(f"[PROTON FINALIZE] Status: {response.status_code}")
-            print(f"[PROTON FINALIZE] Response: {response.text}")
-            
-            return response.status_code == 200
-            
-        except Exception as e:
-            print(f"[PROTON FINALIZE ERROR] {e}")
-            return False
-
-def solve_captcha_native(token, session_cookies=None):
-    """Main function untuk solve captcha menggunakan native API"""
-    print(f"[NATIVE SOLVER] Memulai solve captcha untuk token: {token}")
+def solve_puzzle_captcha_with_2captcha(puzzle_image_base64, page_url):
+    """Solve puzzle captcha menggunakan 2captcha"""
+    print(f"[2CAPTCHA] Memulai solve puzzle captcha...")
     
-    solver = ProtonCaptchaSolver(session_cookies)
+    submit_url = "http://2captcha.com/in.php"
     
-    # Step 1: Initialize
-    if not solver.init_captcha(token):
-        print("[NATIVE SOLVER] Gagal initialize captcha")
-        return False
-    
-    # Step 2: Download images
-    if not solver.get_background_image():
-        print("[NATIVE SOLVER] Gagal download background")
-        return False
-        
-    if not solver.get_puzzle_piece():
-        print("[NATIVE SOLVER] Gagal download puzzle piece")
-        return False
-    
-    # Step 3: Solve puzzle
-    solution = solver.solve_puzzle_opencv()
-    if not solution:
-        print("[NATIVE SOLVER] Gagal solve puzzle dengan OpenCV")
-        return False
-    
-    # Step 4: Validate solution
-    x, y = solution.split(',')
-    if not solver.validate_solution(x, y):
-        print("[NATIVE SOLVER] Solution tidak valid")
-        return False
-    
-    # Step 5: Finalize
-    if not solver.finalize_captcha():
-        print("[NATIVE SOLVER] Gagal finalize captcha")
-        return False
-    
-    print("[NATIVE SOLVER SUCCESS] Captcha berhasil diselesaikan!")
-    return True
-
-def solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url, captcha_data=None):
-    """Backup solver menggunakan AntiCaptcha jika native gagal"""
-    print(f"[ANTICAPTCHA BACKUP] Menggunakan AntiCaptcha sebagai backup...")
-    
-    submit_url = "https://api.anti-captcha.com/createTask"
-    
+    # Submit captcha ke 2captcha
     submit_data = {
-        "clientKey": ANTICAPTCHA_API_KEY,
-        "task": {
-            "type": "CustomCaptchaTask",
-            "imageUrl": f"data:image/png;base64,{puzzle_image_base64}",
-            "assignment": "Complete the puzzle by dragging the puzzle piece to the correct position. Look at the image and determine where the missing puzzle piece should be placed to complete the picture.",
-            "forms": [
-                {
-                    "label": "Puzzle solution coordinates",
-                    "labelHint": "Enter the x,y coordinates where the puzzle piece should be placed (format: x,y)",
-                    "contentType": "text",
-                    "name": "coordinates"
-                }
-            ]
-        }
+        "key": TWOCAPTCHA_API_KEY,
+        "method": "base64",
+        "body": puzzle_image_base64,
+        "textinstructions": "Complete the puzzle by dragging the puzzle piece to the correct position. Look at the image and determine where the missing puzzle piece should be placed to complete the picture. Return coordinates in format: x,y",
+        "json": 1
     }
     
     try:
-        response = requests.post(submit_url, json=submit_data, timeout=30)
+        response = requests.post(submit_url, data=submit_data, timeout=30)
         result = response.json()
         
-        if result.get('errorId') != 0:
-            print(f"[ANTICAPTCHA] Error: {result.get('errorDescription', 'Unknown error')}")
+        if result.get('status') != 1:
+            print(f"[2CAPTCHA] Error submit: {result.get('error_text', 'Unknown error')}")
             return None
             
-        task_id = result['taskId']
-        print(f"[ANTICAPTCHA] Task ID: {task_id}")
+        captcha_id = result['request']
+        print(f"[2CAPTCHA] Captcha ID: {captcha_id}")
         
         # Tunggu hasil solve
-        result_url = "https://api.anti-captcha.com/getTaskResult"
+        result_url = "http://2captcha.com/res.php"
         start_time = time.time()
         
         while time.time() - start_time < CAPTCHA_SOLVE_TIMEOUT:
             time.sleep(15)
             
-            result_data = {
-                "clientKey": ANTICAPTCHA_API_KEY,
-                "taskId": task_id
+            result_params = {
+                "key": TWOCAPTCHA_API_KEY,
+                "action": "get",
+                "id": captcha_id,
+                "json": 1
             }
             
-            response = requests.post(result_url, json=result_data, timeout=30)
+            response = requests.get(result_url, params=result_params, timeout=30)
             result = response.json()
             
-            if result.get('status') == 'ready':
-                solution = result['solution']['answers']['coordinates']
-                print(f"[ANTICAPTCHA SUCCESS] Solution: {solution}")
+            if result.get('status') == 1:
+                solution = result['request']
+                print(f"[2CAPTCHA SUCCESS] Solution: {solution}")
                 return solution
-            elif result.get('status') == 'processing':
-                print(f"[ANTICAPTCHA] Masih diproses...")
+            elif result.get('error_text') == 'CAPCHA_NOT_READY':
+                print(f"[2CAPTCHA] Masih diproses...")
                 continue
             else:
-                print(f"[ANTICAPTCHA ERROR] {result}")
+                print(f"[2CAPTCHA ERROR] {result}")
                 return None
                 
-        print(f"[ANTICAPTCHA TIMEOUT] Timeout")
+        print(f"[2CAPTCHA TIMEOUT] Timeout setelah {CAPTCHA_SOLVE_TIMEOUT} detik")
         return None
         
     except Exception as e:
-        print(f"[ANTICAPTCHA ERROR] {e}")
+        print(f"[2CAPTCHA ERROR] {e}")
         return None
+
+def parse_coordinates(solution):
+    """Parse koordinat dari berbagai format solution"""
+    if not solution:
+        return None, None
+        
+    try:
+        # Format: "x,y" atau "x:y" atau "x y"
+        coords = re.findall(r'(\d+)[,:\s]+(\d+)', solution)
+        if coords:
+            x, y = coords[0]
+            return int(x), int(y)
+        
+        # Format: hanya angka "123 456"
+        numbers = re.findall(r'\d+', solution)
+        if len(numbers) >= 2:
+            return int(numbers[0]), int(numbers[1])
+            
+        print(f"[WARNING] Tidak bisa parse koordinat: {solution}")
+        return None, None
+        
+    except Exception as e:
+        print(f"[ERROR] Parse koordinat gagal: {e}")
+        return None, None
 
 def generate_password():
     """Generates a random, strong-looking password."""
@@ -376,45 +173,6 @@ def switch_to_default(driver):
     driver.switch_to.default_content()
     time.sleep(0.6)
 
-def extract_token_from_url(driver):
-    """Extract token dari URL atau page source"""
-    try:
-        current_url = driver.current_url
-        print(f"[INFO] Current URL: {current_url}")
-        
-        # Cari token di URL
-        token_match = re.search(r'[Tt]oken[=%]([A-Za-z0-9_-]+)', current_url)
-        if token_match:
-            token = token_match.group(1)
-            print(f"[INFO] Token ditemukan di URL: {token}")
-            return token
-        
-        # Cari token di page source
-        page_source = driver.page_source
-        token_matches = re.findall(r'[Tt]oken["\':=\s]+([A-Za-z0-9_-]{20,})', page_source)
-        if token_matches:
-            token = token_matches[0]
-            print(f"[INFO] Token ditemukan di page source: {token}")
-            return token
-            
-        print("[WARNING] Token tidak ditemukan")
-        return None
-        
-    except Exception as e:
-        print(f"[ERROR] Gagal extract token: {e}")
-        return None
-
-def get_session_cookies(driver):
-    """Ambil cookies dari browser untuk API request"""
-    try:
-        cookies = driver.get_cookies()
-        cookie_string = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookies])
-        print(f"[INFO] Cookies: {cookie_string[:100]}...")
-        return cookie_string
-    except Exception as e:
-        print(f"[ERROR] Gagal ambil cookies: {e}")
-        return None
-
 # --- PROSES SIGNUP PROTONMAIL ---
 options = uc.ChromeOptions()
 options.add_argument("--no-sandbox")
@@ -474,89 +232,122 @@ try:
     print("[INFO] Menunggu CAPTCHA muncul...")
     time.sleep(5)
     
-    # Extract token dan cookies untuk API
-    token = extract_token_from_url(driver)
-    session_cookies = get_session_cookies(driver)
-    
     # Cek apakah ada modal Human Verification
     captcha_modal = wait_xpath(driver, "//div[contains(text(), 'Human Verification')] | //h1[contains(text(), 'Human Verification')] | //h2[contains(text(), 'Human Verification')]", timeout=10)
     if captcha_modal:
         print("[INFO] Modal CAPTCHA ditemukan!")
         
-        # Coba solve dengan native API dulu
-        captcha_solved = False
-        if token:
-            print("[INFO] Mencoba solve captcha dengan native API...")
-            captcha_solved = solve_captcha_native(token, session_cookies)
+        # Pastikan tab CAPTCHA aktif
+        captcha_tab = driver.find_elements(By.XPATH, "//button[contains(text(), 'CAPTCHA')]")
+        if captcha_tab:
+            safe_click(captcha_tab[0])
+            print("[INFO] Tab CAPTCHA diklik")
         
-        # Jika native gagal, gunakan AntiCaptcha sebagai backup
-        if not captcha_solved:
-            print("[INFO] Native solver gagal, menggunakan AntiCaptcha backup...")
-            
-            # Pastikan tab CAPTCHA aktif
-            captcha_tab = driver.find_elements(By.XPATH, "//button[contains(text(), 'CAPTCHA')]")
-            if captcha_tab:
-                safe_click(captcha_tab[0])
-                print("[INFO] Tab CAPTCHA diklik")
-            
-            # Tunggu puzzle muncul
-            time.sleep(3)
-            
-            # Cari area puzzle captcha
-            puzzle_container = wait_xpath(driver, "//canvas[@width='370'] | //div[contains(@class, 'protonCaptchaContainer')] | //div[contains(@class, 'challenge-canvas')] | //canvas | //div[contains(text(), 'Complete the puzzle')]", timeout=10)
-            
+        # Tunggu puzzle muncul
+        time.sleep(3)
+        
+        # Cari area puzzle captcha dengan selector yang lebih luas
+        puzzle_selectors = [
+            "//canvas[@width='370']",
+            "//div[contains(@class, 'protonCaptchaContainer')]",
+            "//div[contains(@class, 'challenge-canvas')]", 
+            "//canvas",
+            "//div[contains(text(), 'Complete the puzzle')]",
+            "//div[contains(@class, 'captcha')]",
+            "//div[contains(@class, 'puzzle')]",
+            "//img[contains(@src, 'captcha')]",
+            "//div[@id='captcha']",
+            "//div[@class*='captcha']"
+        ]
+        
+        puzzle_container = None
+        for selector in puzzle_selectors:
+            puzzle_container = wait_xpath(driver, selector, timeout=5)
             if puzzle_container:
-                print("[INFO] Container puzzle ditemukan untuk backup solver")
+                print(f"[INFO] Container puzzle ditemukan dengan selector: {selector}")
+                break
+        
+        if puzzle_container:
+            print("[INFO] Container puzzle ditemukan untuk 2captcha")
+            
+            # Screenshot area puzzle
+            puzzle_screenshot = puzzle_container.screenshot_as_base64
+            current_url = driver.current_url
+            
+            # Solve puzzle captcha dengan 2captcha
+            captcha_solution = solve_puzzle_captcha_with_2captcha(puzzle_screenshot, current_url)
+            
+            if captcha_solution:
+                print(f"[INFO] Menerapkan solusi 2captcha: {captcha_solution}")
                 
-                # Screenshot area puzzle
-                puzzle_screenshot = puzzle_container.screenshot_as_base64
-                current_url = driver.current_url
+                # Parse koordinat dari solusi
+                x, y = parse_coordinates(captcha_solution)
                 
-                # Solve puzzle captcha dengan AntiCaptcha
-                captcha_solution = solve_puzzle_captcha_with_anticaptcha(puzzle_screenshot, current_url)
-                
-                if captcha_solution:
-                    print(f"[INFO] Menerapkan solusi backup: {captcha_solution}")
+                if x is not None and y is not None:
+                    print(f"[INFO] Koordinat parsed: x={x}, y={y}")
                     
-                    # Parse koordinat dari solusi
                     try:
-                        if ',' in captcha_solution:
-                            coords = captcha_solution.split(',')
-                            x = int(coords[0].strip())
-                            y = int(coords[1].strip())
-                        else:
-                            x, y = 300, 200
-                        
-                        print(f"[INFO] Koordinat backup: x={x}, y={y}")
-                        
-                        # Drag puzzle piece
+                        # Method 1: Drag and drop by offset
                         ActionChains(driver).drag_and_drop_by_offset(puzzle_container, x, y).perform()
                         time.sleep(2)
+                        print("[INFO] Method 1: Drag and drop by offset executed")
                         
-                        captcha_solved = True
-                        
-                    except Exception as e:
-                        print(f"[WARNING] Gagal apply backup solution: {e}")
+                    except Exception as e1:
+                        print(f"[WARNING] Method 1 gagal: {e1}")
+                        try:
+                            # Method 2: Click and drag
+                            ActionChains(driver).click_and_hold(puzzle_container).move_by_offset(x, y).release().perform()
+                            time.sleep(2)
+                            print("[INFO] Method 2: Click and drag executed")
+                            
+                        except Exception as e2:
+                            print(f"[WARNING] Method 2 gagal: {e2}")
+                            try:
+                                # Method 3: Move to element then drag
+                                ActionChains(driver).move_to_element(puzzle_container).click_and_hold().move_by_offset(x, y).release().perform()
+                                time.sleep(2)
+                                print("[INFO] Method 3: Move to element then drag executed")
+                                
+                            except Exception as e3:
+                                print(f"[ERROR] Semua method drag gagal: {e3}")
+                    
+                    print("[SUCCESS] CAPTCHA solution applied!")
+                    
                 else:
-                    print("[ERROR] Backup solver juga gagal")
-        
-        if captcha_solved:
-            print("[SUCCESS] CAPTCHA berhasil diselesaikan!")
-            
-            # Cari dan klik tombol Next/Submit
-            next_btn = wait_clickable_xpath(driver, "//button[contains(text(), 'Next')] | //button[contains(@class, 'btn-solid-purple')] | //button[contains(text(), 'Submit')] | //button[contains(text(), 'Verify')]", timeout=10)
-            if next_btn:
-                safe_click(next_btn)
-                print("[INFO] Tombol Next diklik setelah solve captcha")
+                    print("[ERROR] Gagal parse koordinat dari solution")
+            else:
+                print("[ERROR] 2captcha gagal solve puzzle")
+                raise Exception("2captcha solve failed")
         else:
-            print("[ERROR] Semua metode solve captcha gagal")
-            raise Exception("Captcha solve failed")
+            print("[ERROR] Container puzzle captcha tidak ditemukan")
+            raise Exception("Puzzle container not found")
     else:
         print("[INFO] Modal CAPTCHA tidak muncul, mungkin tidak diperlukan")
     
     # 10. Lanjutkan proses setelah captcha
     print("[INFO] Melanjutkan proses setelah captcha...")
     time.sleep(5)
+    
+    # Cari dan klik tombol Next/Submit
+    next_selectors = [
+        "//button[contains(text(), 'Next')]",
+        "//button[contains(@class, 'btn-solid-purple')]", 
+        "//button[contains(text(), 'Submit')]",
+        "//button[contains(text(), 'Verify')]",
+        "//button[@type='submit']",
+        "//input[@type='submit']"
+    ]
+    
+    next_btn = None
+    for selector in next_selectors:
+        next_btn = wait_clickable_xpath(driver, selector, timeout=5)
+        if next_btn:
+            print(f"[INFO] Tombol Next ditemukan dengan selector: {selector}")
+            break
+    
+    if next_btn:
+        safe_click(next_btn)
+        print("[INFO] Tombol Next diklik setelah solve captcha")
     
     # Tunggu halaman berikutnya dan cari tombol Continue
     continue_btn = wait_xpath(driver, "//button[contains(text(),'Continue')]", timeout=20)
