@@ -17,17 +17,18 @@ CAPTCHA_SOLVE_TIMEOUT = 300  # 5 menit timeout untuk solve captcha
 
 def solve_captcha_with_2captcha(site_key, page_url):
     """
-    Menyelesaikan CAPTCHA menggunakan layanan 2captcha
+    Menyelesaikan CAPTCHA puzzle menggunakan layanan 2captcha
     """
-    print(f"[2CAPTCHA] Memulai solve captcha untuk site: {page_url}")
+    print(f"[2CAPTCHA] Memulai solve puzzle captcha untuk site: {page_url}")
     
-    # Submit captcha ke 2captcha
+    # Submit puzzle captcha ke 2captcha
     submit_url = "http://2captcha.com/in.php"
     submit_data = {
         'key': TWOCAPTCHA_API_KEY,
-        'method': 'userrecaptcha',
-        'googlekey': site_key,
+        'method': 'base64',
+        'body': site_key,  # base64 encoded image
         'pageurl': page_url,
+        'textinstructions': 'Complete the puzzle by dragging the puzzle piece to the correct position',
         'json': 1
     }
     
@@ -226,61 +227,52 @@ try:
             # Ambil site key dan URL untuk 2captcha
             current_url = driver.current_url
             
-            # Coba ekstrak site key dari iframe src atau dari page source
-            page_source = driver.page_source
-            site_key = None
+            # Untuk puzzle captcha, kita perlu screenshot gambar puzzle
+            print("[INFO] Mengambil screenshot puzzle captcha...")
             
-            # Pattern untuk mencari site key
-            site_key_patterns = [
-                r'data-sitekey="([^"]+)"',
-                r'sitekey["\']?\s*[:=]\s*["\']([^"\']+)["\']',
-                r'k=([A-Za-z0-9_-]{40})',
-                r'site_key["\']?\s*[:=]\s*["\']([^"\']+)["\']'
-            ]
+            # Cari elemen gambar puzzle
+            puzzle_image = driver.find_element(By.XPATH, "//div[contains(@class, 'puzzle')] | //canvas | //img[contains(@src, 'captcha')]")
             
-            for pattern in site_key_patterns:
-                match = re.search(pattern, page_source)
-                if match:
-                    site_key = match.group(1)
-                    print(f"[INFO] Site key ditemukan: {site_key}")
-                    break
+            if puzzle_image:
+                # Screenshot hanya area puzzle
+                puzzle_screenshot = puzzle_image.screenshot_as_base64
+                print("[INFO] Screenshot puzzle berhasil diambil")
+            else:
+                # Fallback: screenshot seluruh modal
+                modal_element = driver.find_element(By.XPATH, "//div[contains(text(), 'Human Verification')]/ancestor::div[contains(@class, 'modal')]")
+                puzzle_screenshot = modal_element.screenshot_as_base64
+                print("[INFO] Screenshot modal captcha diambil sebagai fallback")
             
-            if not site_key:
-                # Fallback: gunakan site key umum untuk testing
-                site_key = "6Le-wvkSAAAAAPBMRTvw0Q4Muexq9bi0DJwx_mJ-"
-                print(f"[INFO] Menggunakan site key fallback: {site_key}")
-            
-            # Solve captcha dengan 2captcha
-            captcha_solution = solve_captcha_with_2captcha(site_key, current_url)
+            # Solve puzzle captcha dengan 2captcha
+            captcha_solution = solve_captcha_with_2captcha(puzzle_screenshot, current_url)
             
             if captcha_solution:
-                # Inject solusi captcha ke halaman
-                print("[INFO] Menginjeksi solusi captcha...")
+                # Untuk puzzle captcha, solusi biasanya berupa koordinat
+                print("[INFO] Menerapkan solusi puzzle captcha...")
                 
-                # Script untuk mengisi g-recaptcha-response
-                inject_script = f"""
-                var textarea = document.getElementById('g-recaptcha-response');
-                if (!textarea) {{
-                    textarea = document.querySelector('textarea[name="g-recaptcha-response"]');
-                }}
-                if (textarea) {{
-                    textarea.style.display = 'block';
-                    textarea.value = '{captcha_solution}';
-                    textarea.style.display = 'none';
-                }}
+                # Parse koordinat dari solusi (format: "x:y" atau "x,y")
+                try:
+                    if ':' in captcha_solution:
+                        x, y = map(int, captcha_solution.split(':'))
+                    elif ',' in captcha_solution:
+                        x, y = map(int, captcha_solution.split(','))
+                    else:
+                        # Jika format tidak dikenali, gunakan koordinat tengah
+                        x, y = 300, 400
+                    
+                    print(f"[INFO] Koordinat puzzle: x={x}, y={y}")
+                    
+                    # Cari puzzle piece dan drag ke posisi yang benar
+                    puzzle_piece = driver.find_element(By.XPATH, "//div[contains(@class, 'puzzle-piece')] | //*[@draggable='true']")
+                    
+                    if puzzle_piece:
+                        # Drag puzzle piece ke koordinat yang diberikan
+                        ActionChains(driver).drag_and_drop_by_offset(puzzle_piece, x, y).perform()
+                        print("[INFO] Puzzle piece berhasil di-drag")
+                        time.sleep(2)
+                    else:
+                        print("[WARNING] Puzzle piece tidak ditemukan")
                 
-                // Trigger callback jika ada
-                if (typeof window.captchaCallback === 'function') {{
-                    window.captchaCallback('{captcha_solution}');
-                }}
-                
-                // Coba trigger event
-                var event = new Event('input', {{ bubbles: true }});
-                if (textarea) textarea.dispatchEvent(event);
-                """
-                
-                driver.execute_script(inject_script)
-                time.sleep(2)
                 
                 # Cari dan klik tombol Next/Submit
                 next_btn = wait_clickable_xpath(driver, "//button[contains(@class, 'btn-solid-purple') and contains(text(), 'Next')] | //button[contains(text(), 'Next')] | //button[contains(text(), 'Submit')] | //button[contains(text(), 'Verify')]")
