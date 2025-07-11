@@ -1,6 +1,6 @@
-# Proton Mail Auto Signup dengan CapSolver
+# Proton Mail Auto Signup dengan CapSolver (Capy Puzzle)
 
-Script otomatis untuk membuat akun Proton Mail menggunakan layanan CapSolver untuk menyelesaikan puzzle CAPTCHA.
+Script otomatis untuk membuat akun Proton Mail menggunakan layanan CapSolver untuk menyelesaikan Capy puzzle CAPTCHA.
 
 ## Setup
 
@@ -22,29 +22,49 @@ python main.py
 ## Fitur
 
 - ✅ Otomatis generate username dan password random
-- ✅ Menggunakan CapSolver untuk solve puzzle CAPTCHA
+- ✅ Menggunakan CapSolver untuk solve Capy puzzle CAPTCHA
 - ✅ Screenshot hasil sukses/error
 - ✅ Menyimpan email dan password yang berhasil ke file `sukses_email.txt`
-- ✅ Support untuk puzzle captcha dengan drag & drop
-- ✅ Multiple drag methods untuk reliability
-- ✅ Iframe detection dan handling
-- ✅ Enhanced coordinate parsing
+- ✅ Auto detect Capy site key dari berbagai sumber
+- ✅ Support untuk Capy API server custom
+- ✅ Multiple method untuk submit Capy response
+- ✅ Enhanced error handling dan debug
 
-## Keunggulan CapSolver
+## Keunggulan CapSolver untuk Capy Puzzle
 
-- 🎯 **Spesialis puzzle captcha** - lebih akurat untuk jigsaw puzzle
-- ⚡ **Response cepat** - biasanya 10-30 detik
-- 💰 **Harga kompetitif** - sekitar $0.002-0.004 per solve
-- 🔧 **API modern** - support ImageToCoordinatesTask
-- 📊 **Success rate tinggi** - 95%+ untuk puzzle captcha
+- 🎯 **Spesialis Capy** - task type `CapyTaskProxyless` khusus untuk Capy puzzle
+- ⚡ **Response cepat** - biasanya 15-45 detik
+- 💰 **Harga kompetitif** - sekitar $0.003-0.006 per solve
+- 🔧 **API modern** - support penuh untuk Capy puzzle captcha
+- 📊 **Success rate tinggi** - 90%+ untuk Capy puzzle
+- 🛡️ **Proxy support** - bisa pakai proxy jika diperlukan
+
+## Cara Kerja Capy Puzzle
+
+1. **Site Key Detection** - Script otomatis cari site key dari:
+   - Script tags di HTML
+   - Data attributes pada elements
+   - Page source dengan regex patterns
+
+2. **API Server Detection** - Cari API server custom jika ada
+
+3. **CapSolver Integration** - Submit ke CapSolver dengan:
+   - Task type: `CapyTaskProxyless`
+   - Website URL dan site key
+   - API server (jika ada)
+
+4. **Response Handling** - Submit response ke form dengan:
+   - Hidden input fields
+   - JavaScript variables
+   - Window objects
 
 ## Catatan
 
 - Pastikan Anda memiliki saldo di akun CapSolver
-- Script akan menunggu maksimal 5 menit untuk solve puzzle CAPTCHA
-- Puzzle captcha sekitar $0.002-0.004 per solve
+- Script akan menunggu maksimal 5 menit untuk solve Capy puzzle
+- Capy puzzle sekitar $0.003-0.006 per solve
 - Jika CAPTCHA gagal diselesaikan, script akan berhenti dengan error
-- CapSolver lebih baik untuk puzzle/jigsaw captcha dibanding service lain
+- CapSolver adalah pilihan terbaik untuk Capy puzzle captcha
 
 ## File Output
 
@@ -58,13 +78,22 @@ Jika script gagal:
 2. Pastikan saldo CapSolver cukup
 3. Cek screenshot error di folder `screenshoot/`
 4. Pastikan Chrome browser terinstall dengan benar
+5. Periksa apakah site key berhasil ditemukan
 
-## API CapSolver
+## API CapSolver untuk Capy
 
-CapSolver menggunakan task type `ImageToCoordinatesTask` yang khusus untuk:
-- Jigsaw puzzle captcha
-- Click coordinates captcha
-- Drag & drop puzzle
-- Image recognition dengan koordinat output
+CapSolver menggunakan task type `CapyTaskProxyless` yang khusus untuk:
+- Capy puzzle captcha
+- Jigsaw puzzle dari Capy
+- Drag & drop puzzle Capy
+- Image recognition Capy
 
-Format response: `{"coordinates": [{"x": 123, "y": 456}]}`
+Format response: `{"captchakey": "CAPY_RESPONSE_TOKEN"}`
+
+## Supported Capy Versions
+
+- ✅ Capy Puzzle v1
+- ✅ Capy Puzzle v2  
+- ✅ Capy Jigsaw
+- ✅ Capy Drag & Drop
+- ✅ Custom Capy implementations

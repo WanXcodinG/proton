@@ -17,20 +17,30 @@ from selenium.common.exceptions import TimeoutException
 CAPSOLVER_API_KEY = "YOUR_CAPSOLVER_API_KEY_HERE"  # Ganti dengan API key CapSolver Anda
 CAPTCHA_SOLVE_TIMEOUT = 300  # 5 menit timeout untuk solve captcha
 
-def solve_puzzle_captcha_with_capsolver(puzzle_image_base64, page_url):
-    """Solve puzzle captcha menggunakan CapSolver"""
-    print(f"[CAPSOLVER] Memulai solve puzzle captcha...")
+def solve_capy_puzzle_with_capsolver(site_key, page_url, api_server=None):
+    """Solve Capy puzzle captcha menggunakan CapSolver"""
+    print(f"[CAPSOLVER] Memulai solve Capy puzzle captcha...")
+    print(f"[CAPSOLVER] Site key: {site_key}")
+    print(f"[CAPSOLVER] Page URL: {page_url}")
     
     submit_url = "https://api.capsolver.com/createTask"
+    
+    # Task data untuk Capy puzzle
+    task_data = {
+        "type": "CapyTaskProxyless",
+        "websiteURL": page_url,
+        "websiteKey": site_key
+    }
+    
+    # Tambahkan API server jika ada
+    if api_server:
+        task_data["apiServer"] = api_server
+        print(f"[CAPSOLVER] API Server: {api_server}")
     
     # Submit captcha ke CapSolver
     submit_data = {
         "clientKey": CAPSOLVER_API_KEY,
-        "task": {
-            "type": "ImageToCoordinatesTask",
-            "body": puzzle_image_base64,
-            "instruction": "Complete the puzzle by dragging the puzzle piece to the correct position. Look at the image and determine where the missing puzzle piece should be placed to complete the picture. Return coordinates in format: x,y where x and y are the pixel coordinates where the piece should be placed."
-        }
+        "task": task_data
     }
     
     try:
@@ -61,13 +71,12 @@ def solve_puzzle_captcha_with_capsolver(puzzle_image_base64, page_url):
             
             if result.get('status') == 'ready':
                 solution = result['solution']
-                coordinates = solution.get('coordinates', [])
-                if coordinates:
-                    x, y = coordinates[0]['x'], coordinates[0]['y']
-                    print(f"[CAPSOLVER SUCCESS] Solution: x={x}, y={y}")
-                    return f"{x},{y}"
+                capy_response = solution.get('captchakey', '')
+                if capy_response:
+                    print(f"[CAPSOLVER SUCCESS] Capy response: {capy_response[:50]}...")
+                    return capy_response
                 else:
-                    print(f"[CAPSOLVER SUCCESS] Solution text: {solution}")
+                    print(f"[CAPSOLVER SUCCESS] Solution: {solution}")
                     return solution
             elif result.get('status') == 'processing':
                 print(f"[CAPSOLVER] Masih diproses...")
@@ -83,29 +92,130 @@ def solve_puzzle_captcha_with_capsolver(puzzle_image_base64, page_url):
         print(f"[CAPSOLVER ERROR] {e}")
         return None
 
-def parse_coordinates(solution):
-    """Parse koordinat dari berbagai format solution"""
-    if not solution:
-        return None, None
-        
+def find_capy_site_key(driver):
+    """Cari site key Capy dari berbagai sumber"""
+    print("[INFO] Mencari Capy site key...")
+    
+    # Method 1: Dari script tag
     try:
-        # Format: "x,y" atau "x:y" atau "x y"
-        coords = re.findall(r'(\d+)[,:\s]+(\d+)', solution)
-        if coords:
-            x, y = coords[0]
-            return int(x), int(y)
-        
-        # Format: hanya angka "123 456"
-        numbers = re.findall(r'\d+', solution)
-        if len(numbers) >= 2:
-            return int(numbers[0]), int(numbers[1])
+        scripts = driver.find_elements(By.TAG_NAME, "script")
+        for script in scripts:
+            script_content = script.get_attribute("innerHTML") or ""
             
-        print(f"[WARNING] Tidak bisa parse koordinat: {solution}")
-        return None, None
-        
+            # Pattern untuk Capy site key
+            patterns = [
+                r'sitekey["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                r'site_key["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                r'SITE_KEY["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                r'capy_site_key["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                r'data-sitekey["\']?\s*[:=]\s*["\']([^"\']+)["\']'
+            ]
+            
+            for pattern in patterns:
+                matches = re.findall(pattern, script_content, re.IGNORECASE)
+                if matches:
+                    site_key = matches[0]
+                    print(f"[INFO] Site key ditemukan dari script: {site_key}")
+                    return site_key
     except Exception as e:
-        print(f"[ERROR] Parse koordinat gagal: {e}")
-        return None, None
+        print(f"[WARNING] Error mencari di script: {e}")
+    
+    # Method 2: Dari data attributes
+    try:
+        capy_elements = driver.find_elements(By.XPATH, "//*[@data-sitekey or @data-site-key or contains(@class, 'capy')]")
+        for element in capy_elements:
+            site_key = element.get_attribute("data-sitekey") or element.get_attribute("data-site-key")
+            if site_key:
+                print(f"[INFO] Site key ditemukan dari element: {site_key}")
+                return site_key
+    except Exception as e:
+        print(f"[WARNING] Error mencari di elements: {e}")
+    
+    # Method 3: Dari page source
+    try:
+        page_source = driver.page_source
+        patterns = [
+            r'sitekey["\']?\s*[:=]\s*["\']([a-zA-Z0-9_-]{20,})["\']',
+            r'site_key["\']?\s*[:=]\s*["\']([a-zA-Z0-9_-]{20,})["\']',
+            r'data-sitekey["\']?\s*=\s*["\']([a-zA-Z0-9_-]{20,})["\']'
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, page_source, re.IGNORECASE)
+            if matches:
+                site_key = matches[0]
+                print(f"[INFO] Site key ditemukan dari page source: {site_key}")
+                return site_key
+    except Exception as e:
+        print(f"[WARNING] Error mencari di page source: {e}")
+    
+    print("[WARNING] Site key tidak ditemukan")
+    return None
+
+def find_capy_api_server(driver):
+    """Cari API server Capy jika ada"""
+    try:
+        page_source = driver.page_source
+        patterns = [
+            r'api[_-]?server["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+            r'apiServer["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+            r'server["\']?\s*[:=]\s*["\']([^"\']+)["\']'
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, page_source, re.IGNORECASE)
+            if matches:
+                api_server = matches[0]
+                if 'capy' in api_server.lower() or 'puzzle' in api_server.lower():
+                    print(f"[INFO] API server ditemukan: {api_server}")
+                    return api_server
+    except Exception as e:
+        print(f"[WARNING] Error mencari API server: {e}")
+    
+    return None
+
+def submit_capy_response(driver, capy_response):
+    """Submit response Capy ke form"""
+    print(f"[INFO] Submitting Capy response...")
+    
+    # Method 1: Cari input hidden untuk capy response
+    capy_inputs = [
+        "//input[@name='capy_captchakey']",
+        "//input[@name='captchakey']", 
+        "//input[@name='capy-response']",
+        "//input[@name='capy_response']",
+        "//input[contains(@name, 'capy')]",
+        "//input[@id='capy_captchakey']",
+        "//input[@id='captchakey']"
+    ]
+    
+    for input_xpath in capy_inputs:
+        try:
+            capy_input = driver.find_element(By.XPATH, input_xpath)
+            if capy_input:
+                driver.execute_script("arguments[0].value = arguments[1];", capy_input, capy_response)
+                print(f"[SUCCESS] Capy response diset ke input: {input_xpath}")
+                return True
+        except:
+            continue
+    
+    # Method 2: Execute JavaScript untuk set response
+    js_methods = [
+        f"window.capy_captchakey = '{capy_response}';",
+        f"window.captchakey = '{capy_response}';",
+        f"window.capy_response = '{capy_response}';",
+        f"if(window.capy) {{ window.capy.response = '{capy_response}'; }}",
+        f"if(window.Capy) {{ window.Capy.response = '{capy_response}'; }}"
+    ]
+    
+    for js_method in js_methods:
+        try:
+            driver.execute_script(js_method)
+            print(f"[INFO] Executed JS: {js_method}")
+        except Exception as e:
+            print(f"[WARNING] JS execution failed: {e}")
+    
+    return False
 
 def generate_password():
     """Generates a random, strong-looking password."""
@@ -232,7 +342,7 @@ try:
     switch_to_default(driver)
 
     # 9. Sekarang akan muncul CAPTCHA - tunggu modal muncul
-    print("[INFO] Menunggu CAPTCHA muncul...")
+    print("[INFO] Menunggu Capy CAPTCHA muncul...")
     time.sleep(5)
     
     # Cek apakah ada modal Human Verification
@@ -246,154 +356,38 @@ try:
             safe_click(captcha_tab[0])
             print("[INFO] Tab CAPTCHA diklik")
         
-        # Tunggu puzzle muncul
-        time.sleep(3)
+        # Tunggu Capy widget load
+        time.sleep(5)
         
-        # Cari iframe captcha terlebih dahulu
-        captcha_iframe = None
-        iframe_selectors = [
-            "//iframe[contains(@src, 'captcha')]",
-            "//iframe[contains(@title, 'captcha')]",
-            "//iframe[contains(@name, 'captcha')]",
-            "//iframe[@id='captcha']",
-            "//iframe[contains(@src, 'proton')]"
-        ]
+        # Cari site key dan API server
+        site_key = find_capy_site_key(driver)
+        if not site_key:
+            print("[ERROR] Site key tidak ditemukan")
+            raise Exception("Capy site key not found")
         
-        for iframe_selector in iframe_selectors:
-            captcha_iframe = wait_xpath(driver, iframe_selector, timeout=5)
-            if captcha_iframe:
-                print(f"[INFO] CAPTCHA iframe ditemukan: {iframe_selector}")
-                try:
-                    driver.switch_to.frame(captcha_iframe)
-                    print("[INFO] Berhasil switch ke iframe captcha")
-                    time.sleep(2)
-                    break
-                except Exception as e:
-                    print(f"[WARNING] Gagal switch ke iframe: {e}")
-                    driver.switch_to.default_content()
+        api_server = find_capy_api_server(driver)
+        current_url = driver.current_url
         
-        # Debug: Print iframe content
-        print("[DEBUG] Iframe page source (first 1000 chars):")
-        iframe_source = driver.page_source[:1000]
-        print(iframe_source)
+        # Solve Capy puzzle dengan CapSolver
+        capy_response = solve_capy_puzzle_with_capsolver(site_key, current_url, api_server)
         
-        # Debug: Find all elements in iframe
-        all_elements = driver.find_elements(By.XPATH, "//*")
-        print(f"[DEBUG] Total elements in iframe: {len(all_elements)}")
-        
-        # Cari puzzle container dengan berbagai selector
-        puzzle_selectors = [
-            "//canvas",  # Coba selector paling sederhana dulu
-            "//canvas[@width='370' and @height='400']",
-            "//canvas[@width='370']",
-            "//canvas[contains(@style, 'width: 370px')]",
-            "//canvas[contains(@style, 'height: 400px')]",
-            "//canvas[contains(@style, 'touch-action: none')]",
-            "//div[contains(@class, 'puzzle')]",
-            "//div[contains(@class, 'captcha')]",
-            "//div[contains(text(), 'Complete the puzzle')]",
-            "//img[contains(@alt, 'puzzle')]",
-            "//div[@id='puzzle']"
-        ]
-        
-        puzzle_element = None
-        for selector in puzzle_selectors:
-            puzzle_element = wait_xpath(driver, selector, timeout=5)
-            if puzzle_element:
-                print(f"[INFO] Puzzle element ditemukan dengan selector: {selector}")
-                
-                # Debug canvas attributes jika ini canvas
-                if selector.startswith("//canvas"):
-                    try:
-                        canvas_width = puzzle_element.get_attribute("width")
-                        canvas_height = puzzle_element.get_attribute("height")
-                        canvas_style = puzzle_element.get_attribute("style")
-                        canvas_class = puzzle_element.get_attribute("class")
-                        print(f"[DEBUG] Canvas found - width: {canvas_width}, height: {canvas_height}")
-                        print(f"[DEBUG] Canvas style: {canvas_style}")
-                        print(f"[DEBUG] Canvas class: {canvas_class}")
-                    except Exception as e:
-                        print(f"[DEBUG] Error getting canvas attributes: {e}")
-                
-                break
+        if capy_response:
+            print(f"[INFO] Menerapkan solusi Capy...")
+            
+            # Submit response ke form
+            submit_success = submit_capy_response(driver, capy_response)
+            
+            if submit_success:
+                print("[SUCCESS] Capy response berhasil disubmit!")
             else:
-                print(f"[DEBUG] Element not found with selector: {selector}")
-        
-        if puzzle_element:
-            print("[INFO] Puzzle element ditemukan untuk CapSolver")
+                print("[WARNING] Capy response mungkin tidak tersubmit dengan benar")
             
-            # Screenshot puzzle element
-            puzzle_screenshot = puzzle_element.screenshot_as_base64
-            current_url = driver.current_url
+            # Tunggu sebentar lalu cari tombol Next/Submit
+            time.sleep(3)
             
-            # Solve puzzle captcha dengan CapSolver
-            captcha_solution = solve_puzzle_captcha_with_capsolver(puzzle_screenshot, current_url)
-            
-            if captcha_solution:
-                print(f"[INFO] Menerapkan solusi CapSolver: {captcha_solution}")
-                
-                # Parse koordinat dari solusi
-                x, y = parse_coordinates(captcha_solution)
-                
-                if x is not None and y is not None:
-                    print(f"[INFO] Koordinat parsed: x={x}, y={y}")
-                    
-                    try:
-                        # Method 1: Click at specific coordinates
-                        ActionChains(driver).move_to_element_with_offset(puzzle_element, x, y).click().perform()
-                        time.sleep(2)
-                        print("[INFO] Method 1: Click at coordinates executed")
-                        
-                    except Exception as e1:
-                        print(f"[WARNING] Method 1 gagal: {e1}")
-                        try:
-                            # Method 2: Drag and drop simulation
-                            # Asumsi puzzle piece di area kiri atas, drag ke koordinat target
-                            source_x = 50  # Area puzzle piece biasanya di kiri atas
-                            source_y = 50
-                            ActionChains(driver).move_to_element_with_offset(puzzle_element, source_x, source_y).click_and_hold().move_to_element_with_offset(puzzle_element, x, y).release().perform()
-                            time.sleep(2)
-                            print("[INFO] Method 2: Drag from source to target executed")
-                            
-                        except Exception as e2:
-                            print(f"[WARNING] Method 2 gagal: {e2}")
-                            try:
-                                # Method 3: Multiple clicks at target area
-                                for offset in [(0, 0), (-5, -5), (5, 5), (-5, 5), (5, -5)]:
-                                    target_x = x + offset[0]
-                                    target_y = y + offset[1]
-                                    ActionChains(driver).move_to_element_with_offset(puzzle_element, target_x, target_y).click().perform()
-                                    time.sleep(0.5)
-                                print("[INFO] Method 3: Multiple clicks executed")
-                                
-                            except Exception as e3:
-                                print(f"[ERROR] Semua method drag gagal: {e3}")
-                    
-                    print("[SUCCESS] CAPTCHA solution applied!")
-                    
-                    # Switch back to default content jika ada iframe
-                    if captcha_iframe:
-                        driver.switch_to.default_content()
-                        print("[INFO] Switch back to default content")
-                    
-                else:
-                    print("[ERROR] Gagal parse koordinat dari solution")
-            else:
-                print("[ERROR] CapSolver gagal solve puzzle")
-                raise Exception("CapSolver solve failed")
         else:
-            print("[ERROR] Puzzle element tidak ditemukan")
-            
-            # Debug: Print page source untuk analisis
-            print("[DEBUG] Current page title:", driver.title)
-            print("[DEBUG] Current URL:", driver.current_url)
-            
-            # Coba screenshot untuk debug
-            debug_screenshot = f"screenshoot/debug_captcha_{username}_{int(time.time())}.png"
-            driver.save_screenshot(debug_screenshot)
-            print(f"[DEBUG] Debug screenshot saved: {debug_screenshot}")
-            
-            raise Exception("Puzzle element not found")
+            print("[ERROR] CapSolver gagal solve Capy puzzle")
+            raise Exception("CapSolver solve failed")
     else:
         print("[INFO] Modal CAPTCHA tidak muncul, mungkin tidak diperlukan")
     
