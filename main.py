@@ -274,18 +274,55 @@ try:
             "//canvas[contains(@style, 'width: 370px')]",
             "//canvas[contains(@style, 'height: 400px')]",
             "//canvas[contains(@style, 'touch-action: none')]",
-            "//canvas"
         ]
         
         puzzle_canvas = None
         for selector in canvas_selectors:
-            puzzle_canvas = wait_xpath(driver, selector, timeout=3)
+            puzzle_canvas = wait_xpath(driver, selector, timeout=5)
             if puzzle_canvas:
                 print(f"[INFO] Canvas puzzle ditemukan dengan selector: {selector}")
+                
+                # Debug canvas attributes
+                try:
+                    canvas_width = puzzle_canvas.get_attribute("width")
+                    canvas_height = puzzle_canvas.get_attribute("height")
+                    canvas_style = puzzle_canvas.get_attribute("style")
+                    canvas_class = puzzle_canvas.get_attribute("class")
+                    print(f"[DEBUG] Canvas found - width: {canvas_width}, height: {canvas_height}")
+                    print(f"[DEBUG] Canvas style: {canvas_style}")
+                    print(f"[DEBUG] Canvas class: {canvas_class}")
+                except Exception as e:
+                    print(f"[DEBUG] Error getting canvas attributes: {e}")
+                
+                
+                # Debug: Print iframe content
+                print("[DEBUG] Iframe page source (first 1000 chars):")
+                iframe_source = driver.page_source[:1000]
+                print(iframe_source)
+                
+                # Debug: Find all elements in iframe
+                all_elements = driver.find_elements(By.XPATH, "//*")
+                print(f"[DEBUG] Total elements in iframe: {len(all_elements)}")
+                
+                # Debug: Find all canvas elements
+                all_canvas = driver.find_elements(By.TAG_NAME, "canvas")
+                print(f"[DEBUG] Canvas elements found: {len(all_canvas)}")
+                for i, canvas in enumerate(all_canvas):
+                    try:
+                        width = canvas.get_attribute("width")
+                        height = canvas.get_attribute("height")
+                        style = canvas.get_attribute("style")
+                        print(f"[DEBUG] Canvas {i}: width={width}, height={height}, style={style}")
+                    except Exception as e:
+                        print(f"[DEBUG] Canvas {i}: Error getting attributes - {e}")
+                
                 break
+            else:
+                print(f"[DEBUG] Canvas not found with selector: {selector}")
         
         if puzzle_canvas:
             print("[INFO] Canvas puzzle ditemukan untuk 2captcha")
+            "//canvas",  # Coba selector paling sederhana dulu
             
             # Screenshot canvas puzzle
             puzzle_screenshot = puzzle_canvas.screenshot_as_base64
