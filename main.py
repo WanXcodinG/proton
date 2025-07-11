@@ -249,50 +249,44 @@ except Exception as e:
     driver = uc.Chrome()
 
 try:
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     driver.get("https://account.proton.me/signup?plan=free")
-    time.sleep(3)
+    time.sleep(2)
     
     # 1. Masuk ke iframe signup
-    print("[INFO] Mencari iframe signup...")
     signup_iframe_xpath = "//iframe[@title='Email address']"
     switch_to_iframe_xpath(driver, signup_iframe_xpath)
 
     # 2. Isi username faker
-    print(f"[INFO] Mengisi username: {username}")
     username_input = wait_xpath(driver, "//input[@id='username']")
     safe_send_keys(username_input, username)
 
     # 3. Keluar iframe untuk pilih domain
-    switch_to_default(driver)
     domain_btn = wait_xpath(driver, "//button[@id='select-domain']")
     safe_click(domain_btn)
 
     # 4. Pilih @protonmail.com
+    switch_to_default(driver)
     domain_opt = wait_xpath(driver, "//button[@title='protonmail.com']")
     safe_click(domain_opt)
 
     # 5. Masuk lagi ke iframe signup
-    switch_to_iframe_xpath(driver, signup_iframe_xpath)
+    signup_iframe_xpath = "//iframe[@title='Email address']"
 
     # 6. Isi password dan konfirmasi password
-    print("[INFO] Mengisi password...")
     password_input = wait_xpath(driver, "//input[@id='password']")
     safe_send_keys(password_input, password)
     password_confirm = wait_xpath(driver, "//input[@id='password-confirm']")
     safe_send_keys(password_confirm, password)
 
     # 7. Klik signup
-    print("[INFO] Klik tombol signup...")
     signup_btn = wait_xpath(driver, "//button[contains(text(),'Start using Proton Mail now')]")
-    safe_click(signup_btn, sleep_time=3)
+    safe_click(signup_btn, sleep_time=2.5)
 
-    # 8. Tunggu dan klik "No, thanks" untuk recovery
-    print("[INFO] Mencari tombol 'No, thanks'...")
-    nothanks_btn = wait_xpath(driver, "//button[contains(text(),'No, thanks')]", timeout=15)
+    # 8. Tunggu iframe challenge muncul (No thanks recovery)
+    signup_iframe_xpath = "//iframe[@title='Email address']"
+    nothanks_btn = wait_xpath(driver, "//button[contains(text(),'No, thanks')]")
     safe_click(nothanks_btn)
     switch_to_default(driver)
-    time.sleep(2)
 
     # 9. Sekarang akan muncul CAPTCHA - tunggu modal muncul
     print("[INFO] Menunggu CAPTCHA muncul...")
