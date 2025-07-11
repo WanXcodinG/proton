@@ -249,20 +249,41 @@ try:
         # Cari area puzzle captcha dengan selector yang lebih luas
         puzzle_selectors = [
             "//canvas[@width='370']",
-            "//div[contains(@class, 'protonCaptchaContainer')]",
-            "//div[contains(@class, 'challenge-canvas')]", 
+            "//div[contains(@class, 'captcha')]",
             "//canvas",
             "//div[contains(text(), 'Complete the puzzle')]",
-            "//div[contains(@class, 'captcha')]",
             "//div[contains(@class, 'puzzle')]",
             "//img[contains(@src, 'captcha')]",
             "//div[@id='captcha']",
-            "//div[@class*='captcha']"
+            "//div[contains(@class, 'challenge')]",
+            "//iframe[contains(@src, 'captcha')]"
         ]
+        
+        # Coba cari iframe captcha terlebih dahulu
+        captcha_iframe = None
+        iframe_selectors = [
+            "//iframe[contains(@src, 'captcha')]",
+            "//iframe[contains(@title, 'captcha')]",
+            "//iframe[contains(@name, 'captcha')]",
+            "//iframe[@id='captcha']"
+        ]
+        
+        for iframe_selector in iframe_selectors:
+            captcha_iframe = wait_xpath(driver, iframe_selector, timeout=5)
+            if captcha_iframe:
+                print(f"[INFO] CAPTCHA iframe ditemukan: {iframe_selector}")
+                try:
+                    driver.switch_to.frame(captcha_iframe)
+                    print("[INFO] Berhasil switch ke iframe captcha")
+                    time.sleep(2)
+                    break
+                except Exception as e:
+                    print(f"[WARNING] Gagal switch ke iframe: {e}")
+                    driver.switch_to.default_content()
         
         puzzle_container = None
         for selector in puzzle_selectors:
-            puzzle_container = wait_xpath(driver, selector, timeout=5)
+            puzzle_container = wait_xpath(driver, selector, timeout=3)
             if puzzle_container:
                 print(f"[INFO] Container puzzle ditemukan dengan selector: {selector}")
                 break
@@ -287,31 +308,39 @@ try:
                     print(f"[INFO] Koordinat parsed: x={x}, y={y}")
                     
                     try:
-                        # Method 1: Drag and drop by offset
-                        ActionChains(driver).drag_and_drop_by_offset(puzzle_container, x, y).perform()
+                        # Method 1: Click and hold, move, release
+                        ActionChains(driver).move_to_element(puzzle_container).click_and_hold().move_by_offset(x, y).release().perform()
                         time.sleep(2)
-                        print("[INFO] Method 1: Drag and drop by offset executed")
+                        print("[INFO] Method 1: Click and hold drag executed")
                         
                     except Exception as e1:
                         print(f"[WARNING] Method 1 gagal: {e1}")
                         try:
-                            # Method 2: Click and drag
-                            ActionChains(driver).click_and_hold(puzzle_container).move_by_offset(x, y).release().perform()
+                            # Method 2: Drag and drop by offset
+                            ActionChains(driver).drag_and_drop_by_offset(puzzle_container, x, y).perform()
                             time.sleep(2)
-                            print("[INFO] Method 2: Click and drag executed")
+                            print("[INFO] Method 2: Drag and drop by offset executed")
                             
                         except Exception as e2:
                             print(f"[WARNING] Method 2 gagal: {e2}")
                             try:
-                                # Method 3: Move to element then drag
-                                ActionChains(driver).move_to_element(puzzle_container).click_and_hold().move_by_offset(x, y).release().perform()
+                                # Method 3: Manual click at coordinates
+                                element_location = puzzle_container.location
+                                target_x = element_location['x'] + x
+                                target_y = element_location['y'] + y
+                                ActionChains(driver).move_to_element_with_offset(puzzle_container, x, y).click().perform()
                                 time.sleep(2)
-                                print("[INFO] Method 3: Move to element then drag executed")
+                                print("[INFO] Method 3: Click at coordinates executed")
                                 
                             except Exception as e3:
                                 print(f"[ERROR] Semua method drag gagal: {e3}")
                     
                     print("[SUCCESS] CAPTCHA solution applied!")
+                    
+                    # Switch back to default content jika ada iframe
+                    if captcha_iframe:
+                        driver.switch_to.default_content()
+                        print("[INFO] Switch back to default content")
                     
                 else:
                     print("[ERROR] Gagal parse koordinat dari solution")
@@ -320,6 +349,16 @@ try:
                 raise Exception("2captcha solve failed")
         else:
             print("[ERROR] Container puzzle captcha tidak ditemukan")
+            
+            # Debug: Print page source untuk analisis
+            print("[DEBUG] Current page title:", driver.title)
+            print("[DEBUG] Current URL:", driver.current_url)
+            
+            # Coba screenshot untuk debug
+            debug_screenshot = f"screenshoot/debug_captcha_{username}_{int(time.time())}.png"
+            driver.save_screenshot(debug_screenshot)
+            print(f"[DEBUG] Debug screenshot saved: {debug_screenshot}")
+            
             raise Exception("Puzzle container not found")
     else:
         print("[INFO] Modal CAPTCHA tidak muncul, mungkin tidak diperlukan")
