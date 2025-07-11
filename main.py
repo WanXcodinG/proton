@@ -4,6 +4,7 @@ import re
 import random
 import requests
 import base64
+import json
 from faker import Faker
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -16,92 +17,66 @@ from selenium.common.exceptions import TimeoutException
 ANTICAPTCHA_API_KEY = "YOUR_ANTICAPTCHA_API_KEY_HERE"  # Ganti dengan API key AntiCaptcha Anda
 CAPTCHA_SOLVE_TIMEOUT = 300  # 5 menit timeout untuk solve captcha
 
-def solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url):
+def get_proton_captcha_data(token, session_cookies=None):
+    """
+    Mengambil data captcha dari API Proton
+    """
+    url = f"https://account-api.proton.me/captcha/v1/api/init?challengeType=2D&parentURL=https%3A%2F%2Faccount-api.proton.me%2Fcore%2Fv4%2Fcaptcha%3FToken%3D{token}%26ForceWebMessaging%3D1&displayedLang=en&supportedLangs=en-US%2Cen-US%2Cen%2Cen-US%2Cen&purpose=signup&token={token}"
+    
+    headers = {
+        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        'Accept-Encoding': "gzip, deflate, br, zstd",
+        'cache-control': "max-age=0",
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+        'content-type': "application/json",
+        'sec-ch-ua-mobile': "?0",
+        'sec-fetch-site': "same-origin",
+        'sec-fetch-mode': "cors",
+        'sec-fetch-dest': "empty",
+        'referer': f"https://account-api.proton.me/captcha/v1/assets/?purpose=signup&token={token}",
+        'accept-language': "en-US,en;q=0.9",
+        'priority': "u=1, i"
+    }
+    
+    if session_cookies:
+        headers['Cookie'] = session_cookies
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        print(f"[PROTON API] Response status: {response.status_code}")
+        print(f"[PROTON API] Response: {response.text[:200]}...")
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"[PROTON API ERROR] Status: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"[PROTON API ERROR] Exception: {e}")
+        return None
+
+def solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url, captcha_data=None):
     """
     Menyelesaikan puzzle CAPTCHA menggunakan layanan AntiCaptcha
     """
     print(f"[ANTICAPTCHA] Memulai solve puzzle captcha untuk site: {page_url}")
     
-    # Submit puzzle captcha ke AntiCaptcha
+    # Coba method CustomCaptchaTask dulu untuk puzzle
     submit_url = "https://api.anti-captcha.com/createTask"
-    submit_data = {
-        "clientKey": ANTICAPTCHA_API_KEY,
-        "task": {
-            "type": "ImageToTextTask",
-            "body": puzzle_image_base64,
-            "phrase": False,
-            "case": False,
-            "numeric": 0,
-            "math": False,
-            "minLength": 0,
-            "maxLength": 0,
-            "comment": "Drag puzzle piece to correct position. Return coordinates as x,y"
-        },
-        "softId": 0
-    }
     
-    try:
-        response = requests.post(submit_url, json=submit_data, timeout=30)
-        result = response.json()
-        
-        if result.get('errorId') != 0:
-            print(f"[ANTICAPTCHA ERROR] Gagal submit captcha: {result}")
-            return None
-            
-        task_id = result['taskId']
-        print(f"[ANTICAPTCHA] Task ID: {task_id}")
-        
-        # Tunggu hasil solve
-        result_url = "https://api.anti-captcha.com/getTaskResult"
-        start_time = time.time()
-        
-        while time.time() - start_time < CAPTCHA_SOLVE_TIMEOUT:
-            time.sleep(10)  # Tunggu 10 detik sebelum cek hasil
-            
-            result_data = {
-                "clientKey": ANTICAPTCHA_API_KEY,
-                "taskId": task_id
-            }
-            
-            response = requests.post(result_url, json=result_data, timeout=30)
-            result = response.json()
-            
-            if result.get('status') == 'ready':
-                captcha_solution = result['solution']['text']
-                print(f"[ANTICAPTCHA SUCCESS] Captcha berhasil diselesaikan: {captcha_solution}")
-                return captcha_solution
-            elif result.get('status') == 'processing':
-                print(f"[ANTICAPTCHA] Captcha masih diproses...")
-                continue
-            else:
-                print(f"[ANTICAPTCHA ERROR] Error: {result}")
-                return None
-                
-        print(f"[ANTICAPTCHA TIMEOUT] Captcha tidak selesai dalam {CAPTCHA_SOLVE_TIMEOUT} detik")
-        return None
-        
-    except Exception as e:
-        print(f"[ANTICAPTCHA ERROR] Exception: {e}")
-        return None
-
-def solve_custom_puzzle_captcha(puzzle_image_base64, page_url):
-    """
-    Menyelesaikan custom puzzle captcha menggunakan AntiCaptcha dengan method khusus
-    """
-    print(f"[ANTICAPTCHA] Memulai solve custom puzzle captcha...")
-    
-    # Submit custom puzzle captcha ke AntiCaptcha
-    submit_url = "https://api.anti-captcha.com/createTask"
+    # Method 1: CustomCaptchaTask untuk puzzle yang kompleks
     submit_data = {
         "clientKey": ANTICAPTCHA_API_KEY,
         "task": {
             "type": "CustomCaptchaTask",
             "imageUrl": f"data:image/png;base64,{puzzle_image_base64}",
-            "assignment": "Drag the puzzle piece to complete the image. Click and drag the puzzle piece to the correct position to solve the puzzle.",
+            "assignment": "Complete the puzzle by dragging the puzzle piece to the correct position. Look at the image and determine where the missing puzzle piece should be placed to complete the picture.",
             "forms": [
                 {
                     "label": "Puzzle solution coordinates",
-                    "labelHint": "Enter the x,y coordinates where the puzzle piece should be placed",
+                    "labelHint": "Enter the x,y coordinates where the puzzle piece should be placed (format: x,y)",
                     "contentType": "text",
                     "name": "coordinates"
                 }
@@ -114,9 +89,9 @@ def solve_custom_puzzle_captcha(puzzle_image_base64, page_url):
         result = response.json()
         
         if result.get('errorId') != 0:
-            print(f"[ANTICAPTCHA ERROR] Gagal submit custom captcha: {result}")
+            print(f"[ANTICAPTCHA] CustomCaptchaTask gagal: {result.get('errorDescription', 'Unknown error')}")
             # Fallback ke ImageToTextTask
-            return solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url)
+            return solve_puzzle_fallback(puzzle_image_base64, page_url)
             
         task_id = result['taskId']
         print(f"[ANTICAPTCHA] Custom Task ID: {task_id}")
@@ -146,15 +121,81 @@ def solve_custom_puzzle_captcha(puzzle_image_base64, page_url):
             else:
                 print(f"[ANTICAPTCHA ERROR] Custom captcha error: {result}")
                 # Fallback ke method biasa
-                return solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url)
+                return solve_puzzle_fallback(puzzle_image_base64, page_url)
                 
         print(f"[ANTICAPTCHA TIMEOUT] Custom captcha tidak selesai dalam {CAPTCHA_SOLVE_TIMEOUT} detik")
-        return None
+        return solve_puzzle_fallback(puzzle_image_base64, page_url)
         
     except Exception as e:
         print(f"[ANTICAPTCHA ERROR] Custom captcha exception: {e}")
         # Fallback ke method biasa
-        return solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url)
+        return solve_puzzle_fallback(puzzle_image_base64, page_url)
+
+def solve_puzzle_fallback(puzzle_image_base64, page_url):
+    """
+    Fallback method menggunakan ImageToTextTask
+    """
+    print(f"[ANTICAPTCHA] Menggunakan fallback ImageToTextTask...")
+    
+    submit_url = "https://api.anti-captcha.com/createTask"
+    submit_data = {
+        "clientKey": ANTICAPTCHA_API_KEY,
+        "task": {
+            "type": "ImageToTextTask",
+            "body": puzzle_image_base64,
+            "phrase": False,
+            "case": False,
+            "numeric": 0,
+            "math": False,
+            "minLength": 0,
+            "maxLength": 0,
+            "comment": "Drag puzzle piece to correct position. Return coordinates as x,y where the puzzle piece should be placed."
+        }
+    }
+    
+    try:
+        response = requests.post(submit_url, json=submit_data, timeout=30)
+        result = response.json()
+        
+        if result.get('errorId') != 0:
+            print(f"[ANTICAPTCHA ERROR] Fallback gagal: {result}")
+            return None
+            
+        task_id = result['taskId']
+        print(f"[ANTICAPTCHA] Fallback Task ID: {task_id}")
+        
+        # Tunggu hasil solve
+        result_url = "https://api.anti-captcha.com/getTaskResult"
+        start_time = time.time()
+        
+        while time.time() - start_time < CAPTCHA_SOLVE_TIMEOUT:
+            time.sleep(10)
+            
+            result_data = {
+                "clientKey": ANTICAPTCHA_API_KEY,
+                "taskId": task_id
+            }
+            
+            response = requests.post(result_url, json=result_data, timeout=30)
+            result = response.json()
+            
+            if result.get('status') == 'ready':
+                captcha_solution = result['solution']['text']
+                print(f"[ANTICAPTCHA SUCCESS] Fallback berhasil: {captcha_solution}")
+                return captcha_solution
+            elif result.get('status') == 'processing':
+                print(f"[ANTICAPTCHA] Fallback masih diproses...")
+                continue
+            else:
+                print(f"[ANTICAPTCHA ERROR] Fallback error: {result}")
+                return None
+                
+        print(f"[ANTICAPTCHA TIMEOUT] Fallback timeout")
+        return None
+        
+    except Exception as e:
+        print(f"[ANTICAPTCHA ERROR] Fallback exception: {e}")
+        return None
 
 def generate_password():
     """Generates a random, strong-looking password."""
@@ -225,6 +266,49 @@ def switch_to_default(driver):
     driver.switch_to.default_content()
     time.sleep(0.6)
 
+def extract_token_from_url(driver):
+    """
+    Extract token dari URL atau page source
+    """
+    try:
+        current_url = driver.current_url
+        print(f"[INFO] Current URL: {current_url}")
+        
+        # Cari token di URL
+        token_match = re.search(r'[Tt]oken[=%]([A-Za-z0-9]+)', current_url)
+        if token_match:
+            token = token_match.group(1)
+            print(f"[INFO] Token ditemukan di URL: {token}")
+            return token
+        
+        # Cari token di page source
+        page_source = driver.page_source
+        token_matches = re.findall(r'[Tt]oken["\':=\s]+([A-Za-z0-9]{20,})', page_source)
+        if token_matches:
+            token = token_matches[0]
+            print(f"[INFO] Token ditemukan di page source: {token}")
+            return token
+            
+        print("[WARNING] Token tidak ditemukan")
+        return None
+        
+    except Exception as e:
+        print(f"[ERROR] Gagal extract token: {e}")
+        return None
+
+def get_session_cookies(driver):
+    """
+    Ambil cookies dari browser untuk API request
+    """
+    try:
+        cookies = driver.get_cookies()
+        cookie_string = "; ".join([f"{cookie['name']}={cookie['value']}" for cookie in cookies])
+        print(f"[INFO] Cookies: {cookie_string[:100]}...")
+        return cookie_string
+    except Exception as e:
+        print(f"[ERROR] Gagal ambil cookies: {e}")
+        return None
+
 # --- PROSES SIGNUP PROTONMAIL ---
 # Konfigurasi Chrome options yang lebih kompatibel
 options = uc.ChromeOptions()
@@ -233,9 +317,7 @@ options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("--disable-extensions")
 options.add_argument("--disable-plugins")
-options.add_argument("--disable-images")  # Untuk mempercepat loading
-options.add_argument("--disable-javascript")  # Nonaktifkan JS yang tidak perlu
-options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
 
 try:
     driver = uc.Chrome(options=options, version_main=None)
@@ -288,10 +370,19 @@ try:
     print("[INFO] Menunggu CAPTCHA muncul...")
     time.sleep(5)
     
+    # Extract token dan cookies untuk API
+    token = extract_token_from_url(driver)
+    session_cookies = get_session_cookies(driver)
+    
     # Cek apakah ada modal Human Verification
     captcha_modal = wait_xpath(driver, "//div[contains(text(), 'Human Verification')] | //h1[contains(text(), 'Human Verification')] | //h2[contains(text(), 'Human Verification')]", timeout=10)
     if captcha_modal:
         print("[INFO] Modal CAPTCHA ditemukan!")
+        
+        # Ambil data captcha dari API jika token tersedia
+        captcha_api_data = None
+        if token:
+            captcha_api_data = get_proton_captcha_data(token, session_cookies)
         
         # Pastikan tab CAPTCHA aktif (biasanya sudah default)
         captcha_tab = driver.find_elements(By.XPATH, "//button[contains(text(), 'CAPTCHA')]")
@@ -302,8 +393,8 @@ try:
         # Tunggu puzzle muncul
         time.sleep(3)
         
-        # Cari area puzzle captcha berdasarkan struktur DOM yang terlihat
-        puzzle_container = wait_xpath(driver, "//canvas[@width='370'] | //div[contains(@class, 'challenge-canvas')] | //div[contains(@class, 'protonCaptchaContainer')] | //canvas | //div[contains(text(), 'Complete the puzzle')]", timeout=10)
+        # Cari area puzzle captcha dengan selector yang lebih spesifik
+        puzzle_container = wait_xpath(driver, "//canvas[@width='370'] | //div[contains(@class, 'protonCaptchaContainer')] | //div[contains(@class, 'challenge-canvas')] | //canvas | //div[contains(text(), 'Complete the puzzle')]", timeout=10)
         
         if puzzle_container:
             print("[INFO] Container puzzle ditemukan")
@@ -315,7 +406,7 @@ try:
             current_url = driver.current_url
             
             # Solve puzzle captcha dengan AntiCaptcha
-            captcha_solution = solve_puzzle_captcha_with_anticaptcha(puzzle_screenshot, current_url)
+            captcha_solution = solve_puzzle_captcha_with_anticaptcha(puzzle_screenshot, current_url, captcha_api_data)
             
             if captcha_solution:
                 print(f"[INFO] Menerapkan solusi puzzle captcha: {captcha_solution}")
