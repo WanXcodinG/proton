@@ -306,8 +306,8 @@ try:
         # Tunggu puzzle muncul
         time.sleep(3)
         
-        # Cari area puzzle captcha
-        puzzle_container = wait_xpath(driver, "//div[contains(@class, 'puzzle')] | //canvas | //div[contains(text(), 'Complete the puzzle')] | //div[contains(text(), 'dragging the puzzle piece')]", timeout=10)
+        # Cari area puzzle captcha berdasarkan struktur DOM yang terlihat
+        puzzle_container = wait_xpath(driver, "//canvas[@width='370'] | //div[contains(@class, 'challenge-canvas')] | //div[contains(@class, 'protonCaptchaContainer')] | //canvas | //div[contains(text(), 'Complete the puzzle')]", timeout=10)
         
         if puzzle_container:
             print("[INFO] Container puzzle ditemukan")
@@ -346,7 +346,7 @@ try:
                     print(f"[INFO] Koordinat puzzle: x={x}, y={y}")
                     
                     # Cari puzzle piece yang bisa di-drag
-                    puzzle_pieces = driver.find_elements(By.XPATH, "//div[contains(@style, 'cursor')] | //*[@draggable='true'] | //div[contains(@class, 'piece')] | //canvas")
+                    puzzle_pieces = driver.find_elements(By.XPATH, "//canvas[@width='370'] | //div[contains(@class, 'challenge-canvas')] | //*[@draggable='true'] | //div[contains(@class, 'piece')] | //canvas")
                     
                     if puzzle_pieces:
                         puzzle_piece = puzzle_pieces[0]
@@ -370,15 +370,15 @@ try:
                 # Tunggu sebentar setelah solve
                 time.sleep(3)
                 
-                # Cari dan klik tombol Next/Submit
-                next_btn = wait_clickable_xpath(driver, "//button[contains(@class, 'btn-solid-purple') and contains(text(), 'Next')] | //button[contains(@class, 'btn-solid-purple')] | //button[contains(text(), 'Next')] | //button[contains(text(), 'Submit')] | //button[contains(text(), 'Verify')]", timeout=10)
+                # Cari dan klik tombol Next/Submit berdasarkan screenshot
+                next_btn = wait_clickable_xpath(driver, "//button[contains(text(), 'Next')] | //button[contains(@class, 'btn-solid-purple')] | //button[contains(text(), 'Submit')] | //button[contains(text(), 'Verify')]", timeout=10)
                 if next_btn:
                     safe_click(next_btn)
                     print("[INFO] Tombol Next diklik setelah solve captcha")
                 else:
                     print("[WARNING] Tombol Next tidak ditemukan, mencoba selector lain...")
-                    # Coba cari button dengan class purple saja
-                    purple_btn = driver.find_elements(By.XPATH, "//button[contains(@class, 'purple')]")
+                    # Coba cari button dengan warna purple atau yang terlihat di modal
+                    purple_btn = driver.find_elements(By.XPATH, "//button[contains(@class, 'purple')] | //button[@type='submit'] | //div[@class='modal']//button")
                     if purple_btn:
                         safe_click(purple_btn[0])
                         print("[INFO] Button purple diklik")
