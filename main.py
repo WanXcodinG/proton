@@ -226,11 +226,27 @@ def switch_to_default(driver):
     time.sleep(0.6)
 
 # --- PROSES SIGNUP PROTONMAIL ---
+# Konfigurasi Chrome options yang lebih kompatibel
 options = uc.ChromeOptions()
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--disable-blink-features=AutomationControlled")
-options.add_experimental_option("excludeSwitches", ["enable-automation"])
-options.add_experimental_option('useAutomationExtension', False)
-driver = uc.Chrome(options=options, use_subprocess=True)
+options.add_argument("--disable-extensions")
+options.add_argument("--disable-plugins")
+options.add_argument("--disable-images")  # Untuk mempercepat loading
+options.add_argument("--disable-javascript")  # Nonaktifkan JS yang tidak perlu
+options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+# Hapus experimental options yang bermasalah
+# options.add_experimental_option("excludeSwitches", ["enable-automation"])
+# options.add_experimental_option('useAutomationExtension', False)
+
+try:
+    driver = uc.Chrome(options=options, version_main=None)
+except Exception as e:
+    print(f"[ERROR] Gagal membuat driver dengan options, coba tanpa options: {e}")
+    # Fallback tanpa options
+    driver = uc.Chrome()
 
 try:
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
