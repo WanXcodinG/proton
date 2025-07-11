@@ -13,69 +13,74 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException
 
-# --- KONFIGURASI 2CAPTCHA ---
-TWOCAPTCHA_API_KEY = "YOUR_2CAPTCHA_API_KEY_HERE"  # Ganti dengan API key 2captcha Anda
+# --- KONFIGURASI CAPSOLVER ---
+CAPSOLVER_API_KEY = "YOUR_CAPSOLVER_API_KEY_HERE"  # Ganti dengan API key CapSolver Anda
 CAPTCHA_SOLVE_TIMEOUT = 300  # 5 menit timeout untuk solve captcha
 
-def solve_puzzle_captcha_with_2captcha(puzzle_image_base64, page_url):
-    """Solve puzzle captcha menggunakan 2captcha"""
-    print(f"[2CAPTCHA] Memulai solve puzzle captcha...")
+def solve_puzzle_captcha_with_capsolver(puzzle_image_base64, page_url):
+    """Solve puzzle captcha menggunakan CapSolver"""
+    print(f"[CAPSOLVER] Memulai solve puzzle captcha...")
     
-    submit_url = "http://2captcha.com/in.php"
+    submit_url = "https://api.capsolver.com/createTask"
     
-    # Submit captcha ke 2captcha
+    # Submit captcha ke CapSolver
     submit_data = {
-        "key": TWOCAPTCHA_API_KEY,
-        "method": "base64",
-        "body": puzzle_image_base64,
-        "textinstructions": "Complete the puzzle by dragging the puzzle piece to the correct position. Look at the image and determine where the missing puzzle piece should be placed to complete the picture. Return coordinates in format: x,y where x and y are the pixel coordinates where the piece should be placed.",
-        "json": 1
+        "clientKey": CAPSOLVER_API_KEY,
+        "task": {
+            "type": "ImageToCoordinatesTask",
+            "body": puzzle_image_base64,
+            "instruction": "Complete the puzzle by dragging the puzzle piece to the correct position. Look at the image and determine where the missing puzzle piece should be placed to complete the picture. Return coordinates in format: x,y where x and y are the pixel coordinates where the piece should be placed."
+        }
     }
     
     try:
-        response = requests.post(submit_url, data=submit_data, timeout=30)
+        response = requests.post(submit_url, json=submit_data, timeout=30)
         result = response.json()
         
-        if result.get('status') != 1:
-            print(f"[2CAPTCHA] Error submit: {result.get('error_text', 'Unknown error')}")
+        if result.get('errorId') != 0:
+            print(f"[CAPSOLVER] Error submit: {result.get('errorDescription', 'Unknown error')}")
             return None
             
-        captcha_id = result['request']
-        print(f"[2CAPTCHA] Captcha ID: {captcha_id}")
+        task_id = result['taskId']
+        print(f"[CAPSOLVER] Task ID: {task_id}")
         
         # Tunggu hasil solve
-        result_url = "http://2captcha.com/res.php"
+        result_url = "https://api.capsolver.com/getTaskResult"
         start_time = time.time()
         
         while time.time() - start_time < CAPTCHA_SOLVE_TIMEOUT:
-            time.sleep(15)
+            time.sleep(10)
             
             result_params = {
-                "key": TWOCAPTCHA_API_KEY,
-                "action": "get",
-                "id": captcha_id,
-                "json": 1
+                "clientKey": CAPSOLVER_API_KEY,
+                "taskId": task_id
             }
             
-            response = requests.get(result_url, params=result_params, timeout=30)
+            response = requests.post(result_url, json=result_params, timeout=30)
             result = response.json()
             
-            if result.get('status') == 1:
-                solution = result['request']
-                print(f"[2CAPTCHA SUCCESS] Solution: {solution}")
-                return solution
-            elif result.get('error_text') == 'CAPCHA_NOT_READY':
-                print(f"[2CAPTCHA] Masih diproses...")
+            if result.get('status') == 'ready':
+                solution = result['solution']
+                coordinates = solution.get('coordinates', [])
+                if coordinates:
+                    x, y = coordinates[0]['x'], coordinates[0]['y']
+                    print(f"[CAPSOLVER SUCCESS] Solution: x={x}, y={y}")
+                    return f"{x},{y}"
+                else:
+                    print(f"[CAPSOLVER SUCCESS] Solution text: {solution}")
+                    return solution
+            elif result.get('status') == 'processing':
+                print(f"[CAPSOLVER] Masih diproses...")
                 continue
             else:
-                print(f"[2CAPTCHA ERROR] {result}")
+                print(f"[CAPSOLVER ERROR] {result}")
                 return None
                 
-        print(f"[2CAPTCHA TIMEOUT] Timeout setelah {CAPTCHA_SOLVE_TIMEOUT} detik")
+        print(f"[CAPSOLVER TIMEOUT] Timeout setelah {CAPTCHA_SOLVE_TIMEOUT} detik")
         return None
         
     except Exception as e:
-        print(f"[2CAPTCHA ERROR] {e}")
+        print(f"[CAPSOLVER ERROR] {e}")
         return None
 
 def parse_coordinates(solution):
@@ -255,7 +260,7 @@ try:
         ]
         
         for iframe_selector in iframe_selectors:
-            captcha_iframe = wait_xpath(driver, iframe_selector, timeout=3)
+            captcha_iframe = wait_xpath(driver, iframe_selector, timeout=5)
             if captcha_iframe:
                 print(f"[INFO] CAPTCHA iframe ditemukan: {iframe_selector}")
                 try:
@@ -267,72 +272,65 @@ try:
                     print(f"[WARNING] Gagal switch ke iframe: {e}")
                     driver.switch_to.default_content()
         
-        # Cari canvas puzzle dengan selector yang tepat
-        canvas_selectors = [
+        # Debug: Print iframe content
+        print("[DEBUG] Iframe page source (first 1000 chars):")
+        iframe_source = driver.page_source[:1000]
+        print(iframe_source)
+        
+        # Debug: Find all elements in iframe
+        all_elements = driver.find_elements(By.XPATH, "//*")
+        print(f"[DEBUG] Total elements in iframe: {len(all_elements)}")
+        
+        # Cari puzzle container dengan berbagai selector
+        puzzle_selectors = [
+            "//canvas",  # Coba selector paling sederhana dulu
             "//canvas[@width='370' and @height='400']",
             "//canvas[@width='370']",
             "//canvas[contains(@style, 'width: 370px')]",
             "//canvas[contains(@style, 'height: 400px')]",
             "//canvas[contains(@style, 'touch-action: none')]",
+            "//div[contains(@class, 'puzzle')]",
+            "//div[contains(@class, 'captcha')]",
+            "//div[contains(text(), 'Complete the puzzle')]",
+            "//img[contains(@alt, 'puzzle')]",
+            "//div[@id='puzzle']"
         ]
         
-        puzzle_canvas = None
-        for selector in canvas_selectors:
-            puzzle_canvas = wait_xpath(driver, selector, timeout=5)
-            if puzzle_canvas:
-                print(f"[INFO] Canvas puzzle ditemukan dengan selector: {selector}")
+        puzzle_element = None
+        for selector in puzzle_selectors:
+            puzzle_element = wait_xpath(driver, selector, timeout=5)
+            if puzzle_element:
+                print(f"[INFO] Puzzle element ditemukan dengan selector: {selector}")
                 
-                # Debug canvas attributes
-                try:
-                    canvas_width = puzzle_canvas.get_attribute("width")
-                    canvas_height = puzzle_canvas.get_attribute("height")
-                    canvas_style = puzzle_canvas.get_attribute("style")
-                    canvas_class = puzzle_canvas.get_attribute("class")
-                    print(f"[DEBUG] Canvas found - width: {canvas_width}, height: {canvas_height}")
-                    print(f"[DEBUG] Canvas style: {canvas_style}")
-                    print(f"[DEBUG] Canvas class: {canvas_class}")
-                except Exception as e:
-                    print(f"[DEBUG] Error getting canvas attributes: {e}")
-                
-                
-                # Debug: Print iframe content
-                print("[DEBUG] Iframe page source (first 1000 chars):")
-                iframe_source = driver.page_source[:1000]
-                print(iframe_source)
-                
-                # Debug: Find all elements in iframe
-                all_elements = driver.find_elements(By.XPATH, "//*")
-                print(f"[DEBUG] Total elements in iframe: {len(all_elements)}")
-                
-                # Debug: Find all canvas elements
-                all_canvas = driver.find_elements(By.TAG_NAME, "canvas")
-                print(f"[DEBUG] Canvas elements found: {len(all_canvas)}")
-                for i, canvas in enumerate(all_canvas):
+                # Debug canvas attributes jika ini canvas
+                if selector.startswith("//canvas"):
                     try:
-                        width = canvas.get_attribute("width")
-                        height = canvas.get_attribute("height")
-                        style = canvas.get_attribute("style")
-                        print(f"[DEBUG] Canvas {i}: width={width}, height={height}, style={style}")
+                        canvas_width = puzzle_element.get_attribute("width")
+                        canvas_height = puzzle_element.get_attribute("height")
+                        canvas_style = puzzle_element.get_attribute("style")
+                        canvas_class = puzzle_element.get_attribute("class")
+                        print(f"[DEBUG] Canvas found - width: {canvas_width}, height: {canvas_height}")
+                        print(f"[DEBUG] Canvas style: {canvas_style}")
+                        print(f"[DEBUG] Canvas class: {canvas_class}")
                     except Exception as e:
-                        print(f"[DEBUG] Canvas {i}: Error getting attributes - {e}")
+                        print(f"[DEBUG] Error getting canvas attributes: {e}")
                 
                 break
             else:
-                print(f"[DEBUG] Canvas not found with selector: {selector}")
+                print(f"[DEBUG] Element not found with selector: {selector}")
         
-        if puzzle_canvas:
-            print("[INFO] Canvas puzzle ditemukan untuk 2captcha")
-            "//canvas",  # Coba selector paling sederhana dulu
+        if puzzle_element:
+            print("[INFO] Puzzle element ditemukan untuk CapSolver")
             
-            # Screenshot canvas puzzle
-            puzzle_screenshot = puzzle_canvas.screenshot_as_base64
+            # Screenshot puzzle element
+            puzzle_screenshot = puzzle_element.screenshot_as_base64
             current_url = driver.current_url
             
-            # Solve puzzle captcha dengan 2captcha
-            captcha_solution = solve_puzzle_captcha_with_2captcha(puzzle_screenshot, current_url)
+            # Solve puzzle captcha dengan CapSolver
+            captcha_solution = solve_puzzle_captcha_with_capsolver(puzzle_screenshot, current_url)
             
             if captcha_solution:
-                print(f"[INFO] Menerapkan solusi 2captcha: {captcha_solution}")
+                print(f"[INFO] Menerapkan solusi CapSolver: {captcha_solution}")
                 
                 # Parse koordinat dari solusi
                 x, y = parse_coordinates(captcha_solution)
@@ -342,7 +340,7 @@ try:
                     
                     try:
                         # Method 1: Click at specific coordinates
-                        ActionChains(driver).move_to_element_with_offset(puzzle_canvas, x, y).click().perform()
+                        ActionChains(driver).move_to_element_with_offset(puzzle_element, x, y).click().perform()
                         time.sleep(2)
                         print("[INFO] Method 1: Click at coordinates executed")
                         
@@ -350,12 +348,12 @@ try:
                         print(f"[WARNING] Method 1 gagal: {e1}")
                         try:
                             # Method 2: Drag and drop simulation
-                            # Asumsi puzzle piece di tengah canvas, drag ke koordinat target
-                            center_x = 185  # 370/2
-                            center_y = 200  # 400/2
-                            ActionChains(driver).move_to_element_with_offset(puzzle_canvas, center_x, center_y).click_and_hold().move_to_element_with_offset(puzzle_canvas, x, y).release().perform()
+                            # Asumsi puzzle piece di area kiri atas, drag ke koordinat target
+                            source_x = 50  # Area puzzle piece biasanya di kiri atas
+                            source_y = 50
+                            ActionChains(driver).move_to_element_with_offset(puzzle_element, source_x, source_y).click_and_hold().move_to_element_with_offset(puzzle_element, x, y).release().perform()
                             time.sleep(2)
-                            print("[INFO] Method 2: Drag from center to target executed")
+                            print("[INFO] Method 2: Drag from source to target executed")
                             
                         except Exception as e2:
                             print(f"[WARNING] Method 2 gagal: {e2}")
@@ -364,7 +362,7 @@ try:
                                 for offset in [(0, 0), (-5, -5), (5, 5), (-5, 5), (5, -5)]:
                                     target_x = x + offset[0]
                                     target_y = y + offset[1]
-                                    ActionChains(driver).move_to_element_with_offset(puzzle_canvas, target_x, target_y).click().perform()
+                                    ActionChains(driver).move_to_element_with_offset(puzzle_element, target_x, target_y).click().perform()
                                     time.sleep(0.5)
                                 print("[INFO] Method 3: Multiple clicks executed")
                                 
@@ -381,10 +379,10 @@ try:
                 else:
                     print("[ERROR] Gagal parse koordinat dari solution")
             else:
-                print("[ERROR] 2captcha gagal solve puzzle")
-                raise Exception("2captcha solve failed")
+                print("[ERROR] CapSolver gagal solve puzzle")
+                raise Exception("CapSolver solve failed")
         else:
-            print("[ERROR] Canvas puzzle captcha tidak ditemukan")
+            print("[ERROR] Puzzle element tidak ditemukan")
             
             # Debug: Print page source untuk analisis
             print("[DEBUG] Current page title:", driver.title)
@@ -395,7 +393,7 @@ try:
             driver.save_screenshot(debug_screenshot)
             print(f"[DEBUG] Debug screenshot saved: {debug_screenshot}")
             
-            raise Exception("Canvas puzzle not found")
+            raise Exception("Puzzle element not found")
     else:
         print("[INFO] Modal CAPTCHA tidak muncul, mungkin tidak diperlukan")
     
