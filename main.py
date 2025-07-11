@@ -3,6 +3,7 @@ import time
 import re
 import random
 import requests
+import base64
 from faker import Faker
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -11,72 +12,149 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException
 
-# --- KONFIGURASI 2CAPTCHA ---
-TWOCAPTCHA_API_KEY = "YOUR_2CAPTCHA_API_KEY_HERE"  # Ganti dengan API key 2captcha Anda
+# --- KONFIGURASI ANTICAPTCHA ---
+ANTICAPTCHA_API_KEY = "YOUR_ANTICAPTCHA_API_KEY_HERE"  # Ganti dengan API key AntiCaptcha Anda
 CAPTCHA_SOLVE_TIMEOUT = 300  # 5 menit timeout untuk solve captcha
 
-def solve_captcha_with_2captcha(site_key, page_url):
+def solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url):
     """
-    Menyelesaikan CAPTCHA puzzle menggunakan layanan 2captcha
+    Menyelesaikan puzzle CAPTCHA menggunakan layanan AntiCaptcha
     """
-    print(f"[2CAPTCHA] Memulai solve puzzle captcha untuk site: {page_url}")
+    print(f"[ANTICAPTCHA] Memulai solve puzzle captcha untuk site: {page_url}")
     
-    # Submit puzzle captcha ke 2captcha
-    submit_url = "http://2captcha.com/in.php"
+    # Submit puzzle captcha ke AntiCaptcha
+    submit_url = "https://api.anti-captcha.com/createTask"
     submit_data = {
-        'key': TWOCAPTCHA_API_KEY,
-        'method': 'base64',
-        'body': site_key,  # base64 encoded image
-        'pageurl': page_url,
-        'textinstructions': 'Complete the puzzle by dragging the puzzle piece to the correct position',
-        'json': 1
+        "clientKey": ANTICAPTCHA_API_KEY,
+        "task": {
+            "type": "ImageToTextTask",
+            "body": puzzle_image_base64,
+            "phrase": False,
+            "case": False,
+            "numeric": 0,
+            "math": False,
+            "minLength": 0,
+            "maxLength": 0,
+            "comment": "Drag puzzle piece to correct position. Return coordinates as x,y"
+        },
+        "softId": 0
     }
     
     try:
-        response = requests.post(submit_url, data=submit_data, timeout=30)
+        response = requests.post(submit_url, json=submit_data, timeout=30)
         result = response.json()
         
-        if result['status'] != 1:
-            print(f"[2CAPTCHA ERROR] Gagal submit captcha: {result}")
+        if result.get('errorId') != 0:
+            print(f"[ANTICAPTCHA ERROR] Gagal submit captcha: {result}")
             return None
             
-        captcha_id = result['request']
-        print(f"[2CAPTCHA] Captcha ID: {captcha_id}")
+        task_id = result['taskId']
+        print(f"[ANTICAPTCHA] Task ID: {task_id}")
         
         # Tunggu hasil solve
-        result_url = "http://2captcha.com/res.php"
+        result_url = "https://api.anti-captcha.com/getTaskResult"
         start_time = time.time()
         
         while time.time() - start_time < CAPTCHA_SOLVE_TIMEOUT:
             time.sleep(10)  # Tunggu 10 detik sebelum cek hasil
             
             result_data = {
-                'key': TWOCAPTCHA_API_KEY,
-                'action': 'get',
-                'id': captcha_id,
-                'json': 1
+                "clientKey": ANTICAPTCHA_API_KEY,
+                "taskId": task_id
             }
             
-            response = requests.get(result_url, params=result_data, timeout=30)
+            response = requests.post(result_url, json=result_data, timeout=30)
             result = response.json()
             
-            if result['status'] == 1:
-                captcha_solution = result['request']
-                print(f"[2CAPTCHA SUCCESS] Captcha berhasil diselesaikan!")
+            if result.get('status') == 'ready':
+                captcha_solution = result['solution']['text']
+                print(f"[ANTICAPTCHA SUCCESS] Captcha berhasil diselesaikan: {captcha_solution}")
                 return captcha_solution
-            elif result['request'] == 'CAPCHA_NOT_READY':
-                print(f"[2CAPTCHA] Captcha masih diproses...")
+            elif result.get('status') == 'processing':
+                print(f"[ANTICAPTCHA] Captcha masih diproses...")
                 continue
             else:
-                print(f"[2CAPTCHA ERROR] Error: {result}")
+                print(f"[ANTICAPTCHA ERROR] Error: {result}")
                 return None
                 
-        print(f"[2CAPTCHA TIMEOUT] Captcha tidak selesai dalam {CAPTCHA_SOLVE_TIMEOUT} detik")
+        print(f"[ANTICAPTCHA TIMEOUT] Captcha tidak selesai dalam {CAPTCHA_SOLVE_TIMEOUT} detik")
         return None
         
     except Exception as e:
-        print(f"[2CAPTCHA ERROR] Exception: {e}")
+        print(f"[ANTICAPTCHA ERROR] Exception: {e}")
         return None
+
+def solve_custom_puzzle_captcha(puzzle_image_base64, page_url):
+    """
+    Menyelesaikan custom puzzle captcha menggunakan AntiCaptcha dengan method khusus
+    """
+    print(f"[ANTICAPTCHA] Memulai solve custom puzzle captcha...")
+    
+    # Submit custom puzzle captcha ke AntiCaptcha
+    submit_url = "https://api.anti-captcha.com/createTask"
+    submit_data = {
+        "clientKey": ANTICAPTCHA_API_KEY,
+        "task": {
+            "type": "CustomCaptchaTask",
+            "imageUrl": f"data:image/png;base64,{puzzle_image_base64}",
+            "assignment": "Drag the puzzle piece to complete the image. Click and drag the puzzle piece to the correct position to solve the puzzle.",
+            "forms": [
+                {
+                    "label": "Puzzle solution coordinates",
+                    "labelHint": "Enter the x,y coordinates where the puzzle piece should be placed",
+                    "contentType": "text",
+                    "name": "coordinates"
+                }
+            ]
+        }
+    }
+    
+    try:
+        response = requests.post(submit_url, json=submit_data, timeout=30)
+        result = response.json()
+        
+        if result.get('errorId') != 0:
+            print(f"[ANTICAPTCHA ERROR] Gagal submit custom captcha: {result}")
+            # Fallback ke ImageToTextTask
+            return solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url)
+            
+        task_id = result['taskId']
+        print(f"[ANTICAPTCHA] Custom Task ID: {task_id}")
+        
+        # Tunggu hasil solve
+        result_url = "https://api.anti-captcha.com/getTaskResult"
+        start_time = time.time()
+        
+        while time.time() - start_time < CAPTCHA_SOLVE_TIMEOUT:
+            time.sleep(15)  # Custom captcha butuh waktu lebih lama
+            
+            result_data = {
+                "clientKey": ANTICAPTCHA_API_KEY,
+                "taskId": task_id
+            }
+            
+            response = requests.post(result_url, json=result_data, timeout=30)
+            result = response.json()
+            
+            if result.get('status') == 'ready':
+                solution = result['solution']['answers']['coordinates']
+                print(f"[ANTICAPTCHA SUCCESS] Custom captcha berhasil diselesaikan: {solution}")
+                return solution
+            elif result.get('status') == 'processing':
+                print(f"[ANTICAPTCHA] Custom captcha masih diproses...")
+                continue
+            else:
+                print(f"[ANTICAPTCHA ERROR] Custom captcha error: {result}")
+                # Fallback ke method biasa
+                return solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url)
+                
+        print(f"[ANTICAPTCHA TIMEOUT] Custom captcha tidak selesai dalam {CAPTCHA_SOLVE_TIMEOUT} detik")
+        return None
+        
+    except Exception as e:
+        print(f"[ANTICAPTCHA ERROR] Custom captcha exception: {e}")
+        # Fallback ke method biasa
+        return solve_puzzle_captcha_with_anticaptcha(puzzle_image_base64, page_url)
 
 def generate_password():
     """Generates a random, strong-looking password."""
@@ -205,92 +283,102 @@ try:
     time.sleep(5)
     
     # Cek apakah ada modal Human Verification
-    captcha_modal = wait_xpath(driver, "//div[contains(text(), 'Human Verification')]", timeout=10)
+    captcha_modal = wait_xpath(driver, "//div[contains(text(), 'Human Verification')] | //h1[contains(text(), 'Human Verification')] | //h2[contains(text(), 'Human Verification')]", timeout=10)
     if captcha_modal:
         print("[INFO] Modal CAPTCHA ditemukan!")
         
-        # Cari tab CAPTCHA dan klik
-        captcha_tab = wait_xpath(driver, "//button[contains(text(), 'CAPTCHA')]")
+        # Pastikan tab CAPTCHA aktif (biasanya sudah default)
+        captcha_tab = driver.find_elements(By.XPATH, "//button[contains(text(), 'CAPTCHA')]")
         if captcha_tab:
-            safe_click(captcha_tab)
+            safe_click(captcha_tab[0])
             print("[INFO] Tab CAPTCHA diklik")
         
-        # Tunggu iframe captcha muncul
+        # Tunggu puzzle muncul
         time.sleep(3)
         
-        # Cari iframe captcha (biasanya dari recaptcha atau hcaptcha)
-        captcha_iframes = driver.find_elements(By.XPATH, "//iframe[contains(@src, 'captcha') or contains(@src, 'recaptcha') or contains(@src, 'hcaptcha')]")
+        # Cari area puzzle captcha
+        puzzle_container = wait_xpath(driver, "//div[contains(@class, 'puzzle')] | //canvas | //div[contains(text(), 'Complete the puzzle')] | //div[contains(text(), 'dragging the puzzle piece')]", timeout=10)
         
-        if captcha_iframes:
-            print(f"[INFO] Ditemukan {len(captcha_iframes)} iframe captcha")
+        if puzzle_container:
+            print("[INFO] Container puzzle ditemukan")
             
-            # Ambil site key dan URL untuk 2captcha
+            # Screenshot area puzzle
+            print("[INFO] Mengambil screenshot puzzle captcha...")
+            puzzle_screenshot = puzzle_container.screenshot_as_base64
+            
             current_url = driver.current_url
             
-            # Untuk puzzle captcha, kita perlu screenshot gambar puzzle
-            print("[INFO] Mengambil screenshot puzzle captcha...")
-            
-            # Cari elemen gambar puzzle
-            puzzle_image = driver.find_element(By.XPATH, "//div[contains(@class, 'puzzle')] | //canvas | //img[contains(@src, 'captcha')]")
-            
-            if puzzle_image:
-                # Screenshot hanya area puzzle
-                puzzle_screenshot = puzzle_image.screenshot_as_base64
-                print("[INFO] Screenshot puzzle berhasil diambil")
-            else:
-                # Fallback: screenshot seluruh modal
-                modal_element = driver.find_element(By.XPATH, "//div[contains(text(), 'Human Verification')]/ancestor::div[contains(@class, 'modal')]")
-                puzzle_screenshot = modal_element.screenshot_as_base64
-                print("[INFO] Screenshot modal captcha diambil sebagai fallback")
-            
-            # Solve puzzle captcha dengan 2captcha
-            captcha_solution = solve_captcha_with_2captcha(puzzle_screenshot, current_url)
+            # Solve puzzle captcha dengan AntiCaptcha (coba custom method dulu)
+            captcha_solution = solve_custom_puzzle_captcha(puzzle_screenshot, current_url)
             
             if captcha_solution:
-                # Untuk puzzle captcha, solusi biasanya berupa koordinat
-                print("[INFO] Menerapkan solusi puzzle captcha...")
+                print(f"[INFO] Menerapkan solusi puzzle captcha: {captcha_solution}")
                 
-                # Parse koordinat dari solusi (format: "x:y" atau "x,y")
+                # Parse koordinat dari solusi
                 try:
-                    if ':' in captcha_solution:
-                        x, y = map(int, captcha_solution.split(':'))
-                    elif ',' in captcha_solution:
-                        x, y = map(int, captcha_solution.split(','))
+                    # Coba berbagai format koordinat
+                    if ',' in captcha_solution:
+                        coords = captcha_solution.split(',')
+                        x = int(coords[0].strip())
+                        y = int(coords[1].strip())
+                    elif ':' in captcha_solution:
+                        coords = captcha_solution.split(':')
+                        x = int(coords[0].strip())
+                        y = int(coords[1].strip())
+                    elif ' ' in captcha_solution:
+                        coords = captcha_solution.split()
+                        x = int(coords[0])
+                        y = int(coords[1])
                     else:
                         # Jika format tidak dikenali, gunakan koordinat tengah
-                        x, y = 300, 400
+                        x, y = 300, 200
                     
                     print(f"[INFO] Koordinat puzzle: x={x}, y={y}")
                     
-                    # Cari puzzle piece dan drag ke posisi yang benar
-                    puzzle_piece = driver.find_element(By.XPATH, "//div[contains(@class, 'puzzle-piece')] | //*[@draggable='true']")
+                    # Cari puzzle piece yang bisa di-drag
+                    puzzle_pieces = driver.find_elements(By.XPATH, "//div[contains(@style, 'cursor')] | //*[@draggable='true'] | //div[contains(@class, 'piece')] | //canvas")
                     
-                    if puzzle_piece:
+                    if puzzle_pieces:
+                        puzzle_piece = puzzle_pieces[0]
+                        print("[INFO] Puzzle piece ditemukan, melakukan drag...")
+                        
                         # Drag puzzle piece ke koordinat yang diberikan
                         ActionChains(driver).drag_and_drop_by_offset(puzzle_piece, x, y).perform()
-                        print("[INFO] Puzzle piece berhasil di-drag")
                         time.sleep(2)
+                        
+                        print("[INFO] Puzzle piece berhasil di-drag")
                     else:
-                        print("[WARNING] Puzzle piece tidak ditemukan")
+                        print("[WARNING] Puzzle piece tidak ditemukan, coba klik koordinat langsung")
+                        # Fallback: klik langsung di koordinat
+                        ActionChains(driver).move_to_element(puzzle_container).move_by_offset(x, y).click().perform()
+                        
+                except ValueError as e:
+                    print(f"[WARNING] Gagal parse koordinat: {e}, menggunakan koordinat default")
+                    # Gunakan koordinat tengah sebagai fallback
+                    ActionChains(driver).move_to_element(puzzle_container).move_by_offset(300, 200).click().perform()
                 
+                # Tunggu sebentar setelah solve
+                time.sleep(3)
                 
                 # Cari dan klik tombol Next/Submit
-                next_btn = wait_clickable_xpath(driver, "//button[contains(@class, 'btn-solid-purple') and contains(text(), 'Next')] | //button[contains(text(), 'Next')] | //button[contains(text(), 'Submit')] | //button[contains(text(), 'Verify')]")
+                next_btn = wait_clickable_xpath(driver, "//button[contains(@class, 'btn-solid-purple') and contains(text(), 'Next')] | //button[contains(@class, 'btn-solid-purple')] | //button[contains(text(), 'Next')] | //button[contains(text(), 'Submit')] | //button[contains(text(), 'Verify')]", timeout=10)
                 if next_btn:
                     safe_click(next_btn)
                     print("[INFO] Tombol Next diklik setelah solve captcha")
                 else:
-                    print("[WARNING] Tombol Next tidak ditemukan")
-                    # Coba cari dengan class saja jika text tidak ditemukan
-                    next_btn_class = wait_clickable_xpath(driver, "//button[contains(@class, 'btn-solid-purple')]")
-                    if next_btn_class:
-                        safe_click(next_btn_class)
-                        print("[INFO] Tombol dengan class btn-solid-purple diklik")
+                    print("[WARNING] Tombol Next tidak ditemukan, mencoba selector lain...")
+                    # Coba cari button dengan class purple saja
+                    purple_btn = driver.find_elements(By.XPATH, "//button[contains(@class, 'purple')]")
+                    if purple_btn:
+                        safe_click(purple_btn[0])
+                        print("[INFO] Button purple diklik")
             else:
-                print("[ERROR] Gagal menyelesaikan captcha dengan 2captcha")
+                print("[ERROR] Gagal menyelesaikan captcha dengan AntiCaptcha")
                 raise Exception("Captcha solve failed")
         else:
-            print("[WARNING] Iframe captcha tidak ditemukan")
+            print("[WARNING] Container puzzle captcha tidak ditemukan")
+    else:
+        print("[INFO] Modal CAPTCHA tidak muncul, mungkin tidak diperlukan")
     
     # 10. Lanjutkan proses setelah captcha
     print("[INFO] Melanjutkan proses setelah captcha...")
