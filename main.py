@@ -12,8 +12,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException
-from PIL import Image
-import io
 
 # --- KONFIGURASI 2CAPTCHA ---
 TWOCAPTCHA_API_KEY = "YOUR_2CAPTCHA_API_KEY_HERE"  # Ganti dengan API key 2captcha Anda
@@ -30,7 +28,7 @@ def solve_puzzle_captcha_with_2captcha(puzzle_image_base64, page_url):
         "key": TWOCAPTCHA_API_KEY,
         "method": "base64",
         "body": puzzle_image_base64,
-        "textinstructions": "Complete the puzzle by dragging the puzzle piece to the correct position. Look at the image and determine where the missing puzzle piece should be placed to complete the picture. Return coordinates in format: x,y",
+        "textinstructions": "Complete the puzzle by dragging the puzzle piece to the correct position. Look at the image and determine where the missing puzzle piece should be placed to complete the picture. Return coordinates in format: x,y where x and y are the pixel coordinates where the piece should be placed.",
         "json": 1
     }
     
@@ -246,34 +244,18 @@ try:
         # Tunggu puzzle muncul
         time.sleep(3)
         
-        # Cari area puzzle captcha dengan selector yang lebih luas
-        puzzle_selectors = [
-            "//canvas[@width='370' and @height='400']",
-            "//canvas[@width='370']",
-            "//div[contains(@class, 'captcha')]",
-            "//canvas[contains(@style, 'width: 370px')]",
-            "//canvas[contains(@style, 'height: 400px')]",
-            "//div[contains(text(), 'Complete the puzzle')]",
-            "//canvas",
-            "//div[contains(@class, 'puzzle')]",
-            "//img[contains(@src, 'captcha')]",
-            "//div[@id='captcha']",
-            "//canvas[contains(@style, 'touch-action: none')]"
-            "//div[contains(@class, 'challenge')]",
-            "//iframe[contains(@src, 'captcha')]"
-        ]
-        
-        # Coba cari iframe captcha terlebih dahulu
+        # Cari iframe captcha terlebih dahulu
         captcha_iframe = None
         iframe_selectors = [
             "//iframe[contains(@src, 'captcha')]",
             "//iframe[contains(@title, 'captcha')]",
             "//iframe[contains(@name, 'captcha')]",
-            "//iframe[@id='captcha']"
+            "//iframe[@id='captcha']",
+            "//iframe[contains(@src, 'proton')]"
         ]
         
         for iframe_selector in iframe_selectors:
-            captcha_iframe = wait_xpath(driver, iframe_selector, timeout=5)
+            captcha_iframe = wait_xpath(driver, iframe_selector, timeout=3)
             if captcha_iframe:
                 print(f"[INFO] CAPTCHA iframe ditemukan: {iframe_selector}")
                 try:
@@ -285,18 +267,28 @@ try:
                     print(f"[WARNING] Gagal switch ke iframe: {e}")
                     driver.switch_to.default_content()
         
-        puzzle_container = None
-        for selector in puzzle_selectors:
-            puzzle_container = wait_xpath(driver, selector, timeout=3)
-            if puzzle_container:
-                print(f"[INFO] Container puzzle ditemukan dengan selector: {selector}")
+        # Cari canvas puzzle dengan selector yang tepat
+        canvas_selectors = [
+            "//canvas[@width='370' and @height='400']",
+            "//canvas[@width='370']",
+            "//canvas[contains(@style, 'width: 370px')]",
+            "//canvas[contains(@style, 'height: 400px')]",
+            "//canvas[contains(@style, 'touch-action: none')]",
+            "//canvas"
+        ]
+        
+        puzzle_canvas = None
+        for selector in canvas_selectors:
+            puzzle_canvas = wait_xpath(driver, selector, timeout=3)
+            if puzzle_canvas:
+                print(f"[INFO] Canvas puzzle ditemukan dengan selector: {selector}")
                 break
         
-        if puzzle_container:
-            print("[INFO] Container puzzle ditemukan untuk 2captcha")
+        if puzzle_canvas:
+            print("[INFO] Canvas puzzle ditemukan untuk 2captcha")
             
-            # Screenshot area puzzle
-            puzzle_screenshot = puzzle_container.screenshot_as_base64
+            # Screenshot canvas puzzle
+            puzzle_screenshot = puzzle_canvas.screenshot_as_base64
             current_url = driver.current_url
             
             # Solve puzzle captcha dengan 2captcha
@@ -312,29 +304,32 @@ try:
                     print(f"[INFO] Koordinat parsed: x={x}, y={y}")
                     
                     try:
-                        # Method 1: Click and hold, move, release
-                        ActionChains(driver).move_to_element(puzzle_container).click_and_hold().move_by_offset(x, y).release().perform()
+                        # Method 1: Click at specific coordinates
+                        ActionChains(driver).move_to_element_with_offset(puzzle_canvas, x, y).click().perform()
                         time.sleep(2)
-                        print("[INFO] Method 1: Click and hold drag executed")
+                        print("[INFO] Method 1: Click at coordinates executed")
                         
                     except Exception as e1:
                         print(f"[WARNING] Method 1 gagal: {e1}")
                         try:
-                            # Method 2: Drag and drop by offset
-                            ActionChains(driver).drag_and_drop_by_offset(puzzle_container, x, y).perform()
+                            # Method 2: Drag and drop simulation
+                            # Asumsi puzzle piece di tengah canvas, drag ke koordinat target
+                            center_x = 185  # 370/2
+                            center_y = 200  # 400/2
+                            ActionChains(driver).move_to_element_with_offset(puzzle_canvas, center_x, center_y).click_and_hold().move_to_element_with_offset(puzzle_canvas, x, y).release().perform()
                             time.sleep(2)
-                            print("[INFO] Method 2: Drag and drop by offset executed")
+                            print("[INFO] Method 2: Drag from center to target executed")
                             
                         except Exception as e2:
                             print(f"[WARNING] Method 2 gagal: {e2}")
                             try:
-                                # Method 3: Manual click at coordinates
-                                element_location = puzzle_container.location
-                                target_x = element_location['x'] + x
-                                target_y = element_location['y'] + y
-                                ActionChains(driver).move_to_element_with_offset(puzzle_container, x, y).click().perform()
-                                time.sleep(2)
-                                print("[INFO] Method 3: Click at coordinates executed")
+                                # Method 3: Multiple clicks at target area
+                                for offset in [(0, 0), (-5, -5), (5, 5), (-5, 5), (5, -5)]:
+                                    target_x = x + offset[0]
+                                    target_y = y + offset[1]
+                                    ActionChains(driver).move_to_element_with_offset(puzzle_canvas, target_x, target_y).click().perform()
+                                    time.sleep(0.5)
+                                print("[INFO] Method 3: Multiple clicks executed")
                                 
                             except Exception as e3:
                                 print(f"[ERROR] Semua method drag gagal: {e3}")
@@ -352,7 +347,7 @@ try:
                 print("[ERROR] 2captcha gagal solve puzzle")
                 raise Exception("2captcha solve failed")
         else:
-            print("[ERROR] Container puzzle captcha tidak ditemukan")
+            print("[ERROR] Canvas puzzle captcha tidak ditemukan")
             
             # Debug: Print page source untuk analisis
             print("[DEBUG] Current page title:", driver.title)
@@ -363,7 +358,7 @@ try:
             driver.save_screenshot(debug_screenshot)
             print(f"[DEBUG] Debug screenshot saved: {debug_screenshot}")
             
-            raise Exception("Puzzle container not found")
+            raise Exception("Canvas puzzle not found")
     else:
         print("[INFO] Modal CAPTCHA tidak muncul, mungkin tidak diperlukan")
     
