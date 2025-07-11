@@ -237,10 +237,6 @@ options.add_argument("--disable-images")  # Untuk mempercepat loading
 options.add_argument("--disable-javascript")  # Nonaktifkan JS yang tidak perlu
 options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-# Hapus experimental options yang bermasalah
-# options.add_experimental_option("excludeSwitches", ["enable-automation"])
-# options.add_experimental_option('useAutomationExtension', False)
-
 try:
     driver = uc.Chrome(options=options, version_main=None)
 except Exception as e:
@@ -271,6 +267,7 @@ try:
 
     # 5. Masuk lagi ke iframe signup
     signup_iframe_xpath = "//iframe[@title='Email address']"
+    switch_to_iframe_xpath(driver, signup_iframe_xpath)
 
     # 6. Isi password dan konfirmasi password
     password_input = wait_xpath(driver, "//input[@id='password']")
@@ -283,7 +280,6 @@ try:
     safe_click(signup_btn, sleep_time=2.5)
 
     # 8. Tunggu iframe challenge muncul (No thanks recovery)
-    signup_iframe_xpath = "//iframe[@title='Email address']"
     nothanks_btn = wait_xpath(driver, "//button[contains(text(),'No, thanks')]")
     safe_click(nothanks_btn)
     switch_to_default(driver)
@@ -370,7 +366,7 @@ try:
                 # Tunggu sebentar setelah solve
                 time.sleep(3)
                 
-                # Cari dan klik tombol Next/Submit berdasarkan screenshot
+                # Cari dan klik tombol Next/Submit
                 next_btn = wait_clickable_xpath(driver, "//button[contains(text(), 'Next')] | //button[contains(@class, 'btn-solid-purple')] | //button[contains(text(), 'Submit')] | //button[contains(text(), 'Verify')]", timeout=10)
                 if next_btn:
                     safe_click(next_btn)
