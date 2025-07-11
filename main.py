@@ -248,13 +248,17 @@ try:
         
         # Cari area puzzle captcha dengan selector yang lebih luas
         puzzle_selectors = [
+            "//canvas[@width='370' and @height='400']",
             "//canvas[@width='370']",
             "//div[contains(@class, 'captcha')]",
-            "//canvas",
+            "//canvas[contains(@style, 'width: 370px')]",
+            "//canvas[contains(@style, 'height: 400px')]",
             "//div[contains(text(), 'Complete the puzzle')]",
+            "//canvas",
             "//div[contains(@class, 'puzzle')]",
             "//img[contains(@src, 'captcha')]",
             "//div[@id='captcha']",
+            "//canvas[contains(@style, 'touch-action: none')]"
             "//div[contains(@class, 'challenge')]",
             "//iframe[contains(@src, 'captcha')]"
         ]
