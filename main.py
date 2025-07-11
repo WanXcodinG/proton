@@ -283,12 +283,17 @@ try:
                 time.sleep(2)
                 
                 # Cari dan klik tombol Next/Submit
-                next_btn = wait_clickable_xpath(driver, "//button[contains(text(), 'Next') or contains(text(), 'Submit') or contains(text(), 'Verify')]")
+                next_btn = wait_clickable_xpath(driver, "//button[contains(@class, 'btn-solid-purple') and contains(text(), 'Next')] | //button[contains(text(), 'Next')] | //button[contains(text(), 'Submit')] | //button[contains(text(), 'Verify')]")
                 if next_btn:
                     safe_click(next_btn)
                     print("[INFO] Tombol Next diklik setelah solve captcha")
                 else:
                     print("[WARNING] Tombol Next tidak ditemukan")
+                    # Coba cari dengan class saja jika text tidak ditemukan
+                    next_btn_class = wait_clickable_xpath(driver, "//button[contains(@class, 'btn-solid-purple')]")
+                    if next_btn_class:
+                        safe_click(next_btn_class)
+                        print("[INFO] Tombol dengan class btn-solid-purple diklik")
             else:
                 print("[ERROR] Gagal menyelesaikan captcha dengan 2captcha")
                 raise Exception("Captcha solve failed")
