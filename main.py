@@ -13,83 +13,75 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException
 
-# --- KONFIGURASI CAPSOLVER ---
-CAPSOLVER_API_KEY = "YOUR_CAPSOLVER_API_KEY_HERE"  # Ganti dengan API key CapSolver Anda
+# --- KONFIGURASI 2CAPTCHA ---
+TWOCAPTCHA_API_KEY = "YOUR_2CAPTCHA_API_KEY_HERE"  # Ganti dengan API key 2captcha Anda
 CAPTCHA_SOLVE_TIMEOUT = 300  # 5 menit timeout untuk solve captcha
 
-def solve_capy_puzzle_with_capsolver(site_key, page_url, api_server=None):
-    """Solve Capy puzzle captcha menggunakan CapSolver"""
-    print(f"[CAPSOLVER] Memulai solve Capy puzzle captcha...")
-    print(f"[CAPSOLVER] Site key: {site_key}")
-    print(f"[CAPSOLVER] Page URL: {page_url}")
+def solve_capy_puzzle_with_2captcha(site_key, page_url, api_server=None):
+    """Solve Capy puzzle captcha menggunakan 2captcha"""
+    print(f"[2CAPTCHA] Memulai solve Capy puzzle captcha...")
+    print(f"[2CAPTCHA] Site key: {site_key}")
+    print(f"[2CAPTCHA] Page URL: {page_url}")
     
-    submit_url = "https://api.capsolver.com/createTask"
-    
-    # Task data untuk Capy puzzle
-    task_data = {
-        "type": "CapyTaskProxyless",
-        "websiteURL": page_url,
-        "websiteKey": site_key
+    # Submit captcha ke 2captcha
+    submit_url = "http://2captcha.com/in.php"
+    submit_data = {
+        "key": TWOCAPTCHA_API_KEY,
+        "method": "capy",
+        "captchakey": site_key,
+        "pageurl": page_url,
+        "json": 1
     }
     
     # Tambahkan API server jika ada
     if api_server:
-        task_data["apiServer"] = api_server
-        print(f"[CAPSOLVER] API Server: {api_server}")
-    
-    # Submit captcha ke CapSolver
-    submit_data = {
-        "clientKey": CAPSOLVER_API_KEY,
-        "task": task_data
-    }
+        submit_data["api_server"] = api_server
+        print(f"[2CAPTCHA] API Server: {api_server}")
     
     try:
-        response = requests.post(submit_url, json=submit_data, timeout=30)
+        response = requests.post(submit_url, data=submit_data, timeout=30)
         result = response.json()
         
-        if result.get('errorId') != 0:
-            print(f"[CAPSOLVER] Error submit: {result.get('errorDescription', 'Unknown error')}")
+        if result.get('status') != 1:
+            print(f"[2CAPTCHA] Error submit: {result.get('error_text', 'Unknown error')}")
             return None
             
-        task_id = result['taskId']
-        print(f"[CAPSOLVER] Task ID: {task_id}")
+        captcha_id = result['request']
+        print(f"[2CAPTCHA] Captcha ID: {captcha_id}")
         
         # Tunggu hasil solve
-        result_url = "https://api.capsolver.com/getTaskResult"
+        result_url = "http://2captcha.com/res.php"
         start_time = time.time()
         
         while time.time() - start_time < CAPTCHA_SOLVE_TIMEOUT:
-            time.sleep(10)
+            time.sleep(15)  # 2captcha butuh waktu lebih lama
             
             result_params = {
-                "clientKey": CAPSOLVER_API_KEY,
-                "taskId": task_id
+                "key": TWOCAPTCHA_API_KEY,
+                "action": "get",
+                "id": captcha_id,
+                "json": 1
             }
             
-            response = requests.post(result_url, json=result_params, timeout=30)
+            response = requests.get(result_url, params=result_params, timeout=30)
             result = response.json()
             
-            if result.get('status') == 'ready':
-                solution = result['solution']
-                capy_response = solution.get('captchakey', '')
-                if capy_response:
-                    print(f"[CAPSOLVER SUCCESS] Capy response: {capy_response[:50]}...")
-                    return capy_response
-                else:
-                    print(f"[CAPSOLVER SUCCESS] Solution: {solution}")
-                    return solution
-            elif result.get('status') == 'processing':
-                print(f"[CAPSOLVER] Masih diproses...")
+            if result.get('status') == 1:
+                capy_response = result['request']
+                print(f"[2CAPTCHA SUCCESS] Capy response: {capy_response[:50]}...")
+                return capy_response
+            elif result.get('error_text') == 'CAPCHA_NOT_READY':
+                print(f"[2CAPTCHA] Masih diproses...")
                 continue
             else:
-                print(f"[CAPSOLVER ERROR] {result}")
+                print(f"[2CAPTCHA ERROR] {result}")
                 return None
                 
-        print(f"[CAPSOLVER TIMEOUT] Timeout setelah {CAPTCHA_SOLVE_TIMEOUT} detik")
+        print(f"[2CAPTCHA TIMEOUT] Timeout setelah {CAPTCHA_SOLVE_TIMEOUT} detik")
         return None
         
     except Exception as e:
-        print(f"[CAPSOLVER ERROR] {e}")
+        print(f"[2CAPTCHA ERROR] {e}")
         return None
 
 def find_capy_site_key(driver):
@@ -108,36 +100,43 @@ def find_capy_site_key(driver):
                 r'site_key["\']?\s*[:=]\s*["\']([^"\']+)["\']',
                 r'SITE_KEY["\']?\s*[:=]\s*["\']([^"\']+)["\']',
                 r'capy_site_key["\']?\s*[:=]\s*["\']([^"\']+)["\']',
-                r'data-sitekey["\']?\s*[:=]\s*["\']([^"\']+)["\']'
+                r'data-sitekey["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+                r'captchakey["\']?\s*[:=]\s*["\']([^"\']+)["\']'
             ]
             
             for pattern in patterns:
                 matches = re.findall(pattern, script_content, re.IGNORECASE)
                 if matches:
                     site_key = matches[0]
-                    print(f"[INFO] Site key ditemukan dari script: {site_key}")
-                    return site_key
+                    if len(site_key) > 10:  # Site key biasanya panjang
+                        print(f"[INFO] Site key ditemukan dari script: {site_key}")
+                        return site_key
     except Exception as e:
         print(f"[WARNING] Error mencari di script: {e}")
     
     # Method 2: Dari data attributes
     try:
-        capy_elements = driver.find_elements(By.XPATH, "//*[@data-sitekey or @data-site-key or contains(@class, 'capy')]")
+        capy_elements = driver.find_elements(By.XPATH, "//*[@data-sitekey or @data-site-key or @data-captchakey or contains(@class, 'capy')]")
         for element in capy_elements:
-            site_key = element.get_attribute("data-sitekey") or element.get_attribute("data-site-key")
-            if site_key:
+            site_key = (element.get_attribute("data-sitekey") or 
+                       element.get_attribute("data-site-key") or 
+                       element.get_attribute("data-captchakey"))
+            if site_key and len(site_key) > 10:
                 print(f"[INFO] Site key ditemukan dari element: {site_key}")
                 return site_key
     except Exception as e:
         print(f"[WARNING] Error mencari di elements: {e}")
     
-    # Method 3: Dari page source
+    # Method 3: Dari page source dengan pattern lebih luas
     try:
         page_source = driver.page_source
         patterns = [
-            r'sitekey["\']?\s*[:=]\s*["\']([a-zA-Z0-9_-]{20,})["\']',
-            r'site_key["\']?\s*[:=]\s*["\']([a-zA-Z0-9_-]{20,})["\']',
-            r'data-sitekey["\']?\s*=\s*["\']([a-zA-Z0-9_-]{20,})["\']'
+            r'sitekey["\']?\s*[:=]\s*["\']([a-zA-Z0-9_-]{15,})["\']',
+            r'site_key["\']?\s*[:=]\s*["\']([a-zA-Z0-9_-]{15,})["\']',
+            r'data-sitekey["\']?\s*=\s*["\']([a-zA-Z0-9_-]{15,})["\']',
+            r'captchakey["\']?\s*[:=]\s*["\']([a-zA-Z0-9_-]{15,})["\']',
+            r'"siteKey":\s*"([^"]+)"',
+            r'"site_key":\s*"([^"]+)"'
         ]
         
         for pattern in patterns:
@@ -159,14 +158,15 @@ def find_capy_api_server(driver):
         patterns = [
             r'api[_-]?server["\']?\s*[:=]\s*["\']([^"\']+)["\']',
             r'apiServer["\']?\s*[:=]\s*["\']([^"\']+)["\']',
-            r'server["\']?\s*[:=]\s*["\']([^"\']+)["\']'
+            r'server["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+            r'"apiServer":\s*"([^"]+)"'
         ]
         
         for pattern in patterns:
             matches = re.findall(pattern, page_source, re.IGNORECASE)
             if matches:
                 api_server = matches[0]
-                if 'capy' in api_server.lower() or 'puzzle' in api_server.lower():
+                if 'capy' in api_server.lower() or 'puzzle' in api_server.lower() or 'captcha' in api_server.lower():
                     print(f"[INFO] API server ditemukan: {api_server}")
                     return api_server
     except Exception as e:
@@ -186,7 +186,9 @@ def submit_capy_response(driver, capy_response):
         "//input[@name='capy_response']",
         "//input[contains(@name, 'capy')]",
         "//input[@id='capy_captchakey']",
-        "//input[@id='captchakey']"
+        "//input[@id='captchakey']",
+        "//input[@name='g-capy-response']",
+        "//input[@id='g-capy-response']"
     ]
     
     for input_xpath in capy_inputs:
@@ -204,8 +206,10 @@ def submit_capy_response(driver, capy_response):
         f"window.capy_captchakey = '{capy_response}';",
         f"window.captchakey = '{capy_response}';",
         f"window.capy_response = '{capy_response}';",
+        f"window['g-capy-response'] = '{capy_response}';",
         f"if(window.capy) {{ window.capy.response = '{capy_response}'; }}",
-        f"if(window.Capy) {{ window.Capy.response = '{capy_response}'; }}"
+        f"if(window.Capy) {{ window.Capy.response = '{capy_response}'; }}",
+        f"if(window.CapyPuzzle) {{ window.CapyPuzzle.response = '{capy_response}'; }}"
     ]
     
     for js_method in js_methods:
@@ -214,6 +218,20 @@ def submit_capy_response(driver, capy_response):
             print(f"[INFO] Executed JS: {js_method}")
         except Exception as e:
             print(f"[WARNING] JS execution failed: {e}")
+    
+    # Method 3: Trigger callback functions
+    callback_methods = [
+        f"if(window.capyCallback) {{ window.capyCallback('{capy_response}'); }}",
+        f"if(window.onCapyComplete) {{ window.onCapyComplete('{capy_response}'); }}",
+        f"if(window.capy && window.capy.callback) {{ window.capy.callback('{capy_response}'); }}"
+    ]
+    
+    for callback in callback_methods:
+        try:
+            driver.execute_script(callback)
+            print(f"[INFO] Executed callback: {callback}")
+        except Exception as e:
+            print(f"[WARNING] Callback execution failed: {e}")
     
     return False
 
@@ -314,11 +332,11 @@ try:
     safe_send_keys(username_input, username)
 
     # 3. Keluar iframe untuk pilih domain
+    switch_to_default(driver)
     domain_btn = wait_xpath(driver, "//button[@id='select-domain']")
     safe_click(domain_btn)
 
     # 4. Pilih @protonmail.com
-    switch_to_default(driver)
     domain_opt = wait_xpath(driver, "//button[@title='protonmail.com']")
     safe_click(domain_opt)
 
@@ -337,9 +355,10 @@ try:
     safe_click(signup_btn, sleep_time=2.5)
 
     # 8. Tunggu iframe challenge muncul (No thanks recovery)
-    nothanks_btn = wait_xpath(driver, "//button[contains(text(),'No, thanks')]")
-    safe_click(nothanks_btn)
     switch_to_default(driver)
+    nothanks_btn = wait_xpath(driver, "//button[contains(text(),'No, thanks')]")
+    if nothanks_btn:
+        safe_click(nothanks_btn)
 
     # 9. Sekarang akan muncul CAPTCHA - tunggu modal muncul
     print("[INFO] Menunggu Capy CAPTCHA muncul...")
@@ -368,8 +387,8 @@ try:
         api_server = find_capy_api_server(driver)
         current_url = driver.current_url
         
-        # Solve Capy puzzle dengan CapSolver
-        capy_response = solve_capy_puzzle_with_capsolver(site_key, current_url, api_server)
+        # Solve Capy puzzle dengan 2captcha
+        capy_response = solve_capy_puzzle_with_2captcha(site_key, current_url, api_server)
         
         if capy_response:
             print(f"[INFO] Menerapkan solusi Capy...")
@@ -386,8 +405,8 @@ try:
             time.sleep(3)
             
         else:
-            print("[ERROR] CapSolver gagal solve Capy puzzle")
-            raise Exception("CapSolver solve failed")
+            print("[ERROR] 2captcha gagal solve Capy puzzle")
+            raise Exception("2captcha solve failed")
     else:
         print("[INFO] Modal CAPTCHA tidak muncul, mungkin tidak diperlukan")
     

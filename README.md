@@ -1,6 +1,6 @@
-# Proton Mail Auto Signup dengan CapSolver (Capy Puzzle)
+# Proton Mail Auto Signup dengan 2captcha (Capy Puzzle)
 
-Script otomatis untuk membuat akun Proton Mail menggunakan layanan CapSolver untuk menyelesaikan Capy puzzle CAPTCHA.
+Script otomatis untuk membuat akun Proton Mail menggunakan layanan 2captcha untuk menyelesaikan Capy puzzle CAPTCHA.
 
 ## Setup
 
@@ -9,10 +9,10 @@ Script otomatis untuk membuat akun Proton Mail menggunakan layanan CapSolver unt
 pip install -r requirements.txt
 ```
 
-2. Dapatkan API key dari CapSolver:
-   - Daftar di https://capsolver.com
+2. Dapatkan API key dari 2captcha:
+   - Daftar di https://2captcha.com
    - Dapatkan API key dari dashboard
-   - Ganti `YOUR_CAPSOLVER_API_KEY_HERE` di file `main.py` dengan API key Anda
+   - Ganti `YOUR_2CAPTCHA_API_KEY_HERE` di file `main.py` dengan API key Anda
 
 3. Jalankan script:
 ```bash
@@ -22,7 +22,7 @@ python main.py
 ## Fitur
 
 - ✅ Otomatis generate username dan password random
-- ✅ Menggunakan CapSolver untuk solve Capy puzzle CAPTCHA
+- ✅ Menggunakan 2captcha untuk solve Capy puzzle CAPTCHA
 - ✅ Screenshot hasil sukses/error
 - ✅ Menyimpan email dan password yang berhasil ke file `sukses_email.txt`
 - ✅ Auto detect Capy site key dari berbagai sumber
@@ -30,13 +30,13 @@ python main.py
 - ✅ Multiple method untuk submit Capy response
 - ✅ Enhanced error handling dan debug
 
-## Keunggulan CapSolver untuk Capy Puzzle
+## Keunggulan 2captcha untuk Capy Puzzle
 
-- 🎯 **Spesialis Capy** - task type `CapyTaskProxyless` khusus untuk Capy puzzle
-- ⚡ **Response cepat** - biasanya 15-45 detik
-- 💰 **Harga kompetitif** - sekitar $0.003-0.006 per solve
-- 🔧 **API modern** - support penuh untuk Capy puzzle captcha
-- 📊 **Success rate tinggi** - 90%+ untuk Capy puzzle
+- 🎯 **Method "capy"** - task type khusus untuk Capy puzzle
+- ⚡ **Response cepat** - biasanya 30-60 detik
+- 💰 **Harga kompetitif** - sekitar $0.002-0.004 per solve
+- 🔧 **API stabil** - support penuh untuk Capy puzzle captcha
+- 📊 **Success rate tinggi** - 85%+ untuk Capy puzzle
 - 🛡️ **Proxy support** - bisa pakai proxy jika diperlukan
 
 ## Cara Kerja Capy Puzzle
@@ -48,23 +48,25 @@ python main.py
 
 2. **API Server Detection** - Cari API server custom jika ada
 
-3. **CapSolver Integration** - Submit ke CapSolver dengan:
-   - Task type: `CapyTaskProxyless`
-   - Website URL dan site key
+3. **2captcha Integration** - Submit ke 2captcha dengan:
+   - Method: `capy`
+   - Captchakey: site key yang ditemukan
+   - Pageurl: URL halaman saat ini
    - API server (jika ada)
 
 4. **Response Handling** - Submit response ke form dengan:
    - Hidden input fields
    - JavaScript variables
    - Window objects
+   - Callback functions
 
 ## Catatan
 
-- Pastikan Anda memiliki saldo di akun CapSolver
+- Pastikan Anda memiliki saldo di akun 2captcha
 - Script akan menunggu maksimal 5 menit untuk solve Capy puzzle
-- Capy puzzle sekitar $0.003-0.006 per solve
+- Capy puzzle sekitar $0.002-0.004 per solve
 - Jika CAPTCHA gagal diselesaikan, script akan berhenti dengan error
-- CapSolver adalah pilihan terbaik untuk Capy puzzle captcha
+- 2captcha adalah pilihan yang baik untuk Capy puzzle captcha
 
 ## File Output
 
@@ -74,21 +76,21 @@ python main.py
 ## Troubleshooting
 
 Jika script gagal:
-1. Pastikan API key CapSolver benar
-2. Pastikan saldo CapSolver cukup
+1. Pastikan API key 2captcha benar
+2. Pastikan saldo 2captcha cukup
 3. Cek screenshot error di folder `screenshoot/`
 4. Pastikan Chrome browser terinstall dengan benar
 5. Periksa apakah site key berhasil ditemukan
 
-## API CapSolver untuk Capy
+## API 2captcha untuk Capy
 
-CapSolver menggunakan task type `CapyTaskProxyless` yang khusus untuk:
+2captcha menggunakan method `capy` yang khusus untuk:
 - Capy puzzle captcha
 - Jigsaw puzzle dari Capy
 - Drag & drop puzzle Capy
 - Image recognition Capy
 
-Format response: `{"captchakey": "CAPY_RESPONSE_TOKEN"}`
+Format response: String token yang harus disubmit ke form
 
 ## Supported Capy Versions
 
@@ -97,3 +99,10 @@ Format response: `{"captchakey": "CAPY_RESPONSE_TOKEN"}`
 - ✅ Capy Jigsaw
 - ✅ Capy Drag & Drop
 - ✅ Custom Capy implementations
+
+## Harga 2captcha
+
+- **Capy puzzle**: $0.002-0.004 per solve
+- **Minimum deposit**: $1
+- **Payment methods**: PayPal, Bitcoin, WebMoney, dll
+- **Refund policy**: Jika solve gagal, saldo dikembalikan
